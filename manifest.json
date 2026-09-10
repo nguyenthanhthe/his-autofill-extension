@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "HIS V2 - Tự Động Điền Giấy Khám Sức Khỏe",
+  "version": "1.0.0",
+  "description": "Tiện ích tự động điền thông tin khám lâm sàng, kết luận và tự động lưu giấy khám sức khỏe trên hệ thống v20.ytecoso.vn",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "HIS V2 AutoFill (F9)"
+  },
+  "permissions": ["activeTab"],
+  "host_permissions": [
+    "https://v20.ytecoso.vn/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://v20.ytecoso.vn/*"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ]
+}
