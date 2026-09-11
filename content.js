@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         HIS V2 - Bảng Điều Khiển Điền Khám Lâm Sàng & Kết Luận
+// @name         HIS V2 - Tự Động Điền Khám Sức Khỏe & Tiếp Đón
 // @namespace    http://tampermonkey.net/
-// @version      3.6
-// @description  Chỉ điền Khám lâm sàng & Kết luận: Loại II Khỏe, Ngoại/Da liễu BS 06, Sản phụ khoa bỏ trống, Mắt 6 7 6 7 BS 24, TMH BS 24, RHM BS 24, Kết luận BS 02.
-// @author       Antigravity
+// @version      4.2
+// @description  Tự động điền Tiếp đón (Nghề nghiệp, Mẫu KSK, Đối tượng KSK, Nguồn kinh phí, Lý do KSK) & Điền Khám lâm sàng + Kết luận tự động lưu trên hệ thống v20.ytecoso.vn
+// @author       ThanhThe
 // @match        https://v20.ytecoso.vn/*
 // @grant        none
 // ==/UserScript==
@@ -12,7 +12,6 @@
     'use strict';
 
     const delay = ms => new Promise(r => setTimeout(r, ms));
-    const getActivePane = () => document.querySelector('.ant-tabs-tabpane-active') || document;
 
     const setAngularValue = (el, value) => {
         if (!el) return;
@@ -22,16 +21,32 @@
         el.dispatchEvent(new Event('blur', { bubbles: true, composed: true }));
     };
 
-    const clickTab = async (tabName) => {
-        const tabs = Array.from(document.querySelectorAll('.ant-tabs-tab'));
+    // Chuyển tab cấp 1 (Bàn làm việc / Tiếp đón khám sức khoẻ / Khám sức khỏe định kỳ)
+    const clickMainTab = async (tabName) => {
+        const tabs = Array.from(document.querySelectorAll('.tab-app-main .ant-tabs-tab, .ant-tabs-tab'));
+        const tab = tabs.find(t => t.innerText.trim() === tabName || t.innerText.includes(tabName));
+        if (tab) {
+            tab.click();
+            await delay(300);
+            return true;
+        }
+        return false;
+    };
+
+    // Chuyển tab cấp 2 dọc (HÀNH CHÍNH / TIỀN SỬ / THỂ LỰC / KHÁM LÂM SÀNG / KẾT LUẬN)
+    const clickSubTab = async (tabName) => {
+        const tabs = Array.from(document.querySelectorAll('.vertical-tabs .ant-tabs-tab, .ant-tabs-tab'));
         const tab = tabs.find(t => t.innerText.trim() === tabName || t.innerText.includes(tabName));
         if (tab) {
             tab.click();
             await delay(250);
+            return true;
         }
+        return false;
     };
 
-    const selectOptionByText = async (selectEl, targetText, fallbackText = '') => {
+    // Chọn option trong nz-select thông qua ô tìm kiếm
+    const selectOption = async (selectEl, textMatch, fallback = '') => {
         if (!selectEl) return false;
         const topControl = selectEl.querySelector('nz-select-top-control') || selectEl;
         topControl.click();
@@ -40,16 +55,19 @@
         const input = selectEl.querySelector('.ant-select-selection-search-input');
         if (input) {
             input.focus();
-            input.value = targetText;
+            input.value = textMatch;
             input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-            input.dispatchEvent(new KeyboardEvent('keydown', { key: targetText[0], bubbles: true }));
-            input.dispatchEvent(new KeyboardEvent('keyup', { key: targetText[0], bubbles: true }));
+            input.dispatchEvent(new KeyboardEvent('keydown', { key: textMatch[0] || 'a', bubbles: true }));
+            input.dispatchEvent(new KeyboardEvent('keyup', { key: textMatch[0] || 'a', bubbles: true }));
         }
 
-        for (let i = 0; i < 20; i++) {
-            await delay(90);
+        for (let i = 0; i < 25; i++) {
+            await delay(80);
             const options = Array.from(document.querySelectorAll('.ant-select-item-option'));
-            const match = options.find(o => o.innerText.includes(targetText) || (fallbackText && o.innerText.includes(fallbackText)));
+            const match = options.find(o => {
+                const txt = o.innerText.toLowerCase();
+                return txt.includes(textMatch.toLowerCase()) || (fallback && txt.includes(fallback.toLowerCase()));
+            });
             if (match) {
                 match.click();
                 await delay(120);
@@ -60,19 +78,67 @@
         return false;
     };
 
-    let isRunning = false;
+    // ----------------------------------------------------
+    // 1. KHÂU 1: ĐIỀN CẤU HÌNH TIẾP ĐÓN KHÁM SỨC KHỎE
+    // (Chỉ điền các thông tin mặc định theo quy chuẩn, không điền người thân)
+    // ----------------------------------------------------
+    async function fillTiepDonConfig(statusEl) {
+        if (statusEl) statusEl.innerText = '⏳ Đang điền cấu hình Tiếp đón...';
+
+        await clickMainTab('Tiếp đón khám sức khoẻ');
+
+        const topPanes = Array.from(document.querySelectorAll('.tab-app-main > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane'));
+        const pane = topPanes[1] || document.querySelector('.ant-tabs-tabpane-active') || document;
+
+        // Giờ tiếp đón: 07:30 sáng
+        const timeInputs = Array.from(pane.querySelectorAll('input[placeholder="__:__"]'));
+        if (timeInputs[0]) setAngularValue(timeInputs[0], "07:30");
+
+        // Các dropdown bắt buộc (*)
+        const selects = Array.from(pane.querySelectorAll('nz-select'));
+
+        // Nghề nghiệp: 00000 - Khác, Không xác định
+        if (selects[6]) {
+            await selectOption(selects[6], "00000", "Khác, Không xác định");
+        }
+
+        // Mẫu KSK: Mẫu khám sức khỏe dùng cho người từ đủ 18 tuổi trở lên
+        if (selects[10]) {
+            await selectOption(selects[10], "từ đủ 18 tuổi trở lên");
+        }
+
+        // Đối tượng KSK: Các đối tượng khác
+        if (selects[11]) {
+            await selectOption(selects[11], "Các đối tượng khác");
+        }
+
+        // Nguồn kinh phí: Xã hội hoá
+        if (selects[12]) {
+            await selectOption(selects[12], "Xã hội hoá");
+        }
+
+        // Lý do khám sức khoẻ: Khám sức khoẻ định kỳ
+        const taLyDo = pane.querySelector('textarea[name="lyDoVaoVien"]') || pane.querySelector('textarea');
+        if (taLyDo) setAngularValue(taLyDo, "Khám sức khoẻ định kỳ");
+
+        if (statusEl) statusEl.innerText = '✅ Đã điền xong cấu hình Tiếp đón (Nghề nghiệp, Mẫu KSK, Đối tượng, Kinh phí, Lý do)!';
+    }
 
     // ----------------------------------------------------
-    // CHỈ ĐIỀN KHÁM LÂM SÀNG & KẾT LUẬN THEO YÊU CẦU MỚI
+    // 2. KHÂU 2: ĐIỀN KHÁM LÂM SÀNG & KẾT LUẬN (NGOẠI TRỪ THỂ LỰC)
     // ----------------------------------------------------
     async function fillKhamLamSangVaKetLuan(statusEl) {
+        if (statusEl) statusEl.innerText = '⏳ Đang chuyển sang Khám sức khỏe định kỳ...';
+
+        // 1. Chuyển sang tab Khám sức khỏe định kỳ
+        await clickMainTab('Khám sức khỏe định kỳ');
+
+        // 2. Chuyển sang tab KHÁM LÂM SÀNG (Bỏ qua Thể lực theo yêu cầu)
         if (statusEl) statusEl.innerText = '⏳ Đang điền Khám Lâm Sàng...';
+        await clickSubTab('KHÁM LÂM SÀNG');
+        const paneLS = document.querySelector('.vertical-tabs .ant-tabs-tabpane-active') || document;
 
-        // 1. CHUYỂN SANG TAB KHÁM LÂM SÀNG
-        await clickTab('KHÁM LÂM SÀNG');
-        const paneLS = getActivePane();
-
-        // 1.1 Điền nội dung khám textareas
+        // 2.1 Điền nội dung textareas 16 chuyên khoa
         const textareasLS = Array.from(paneLS.querySelectorAll('textarea'));
         const defaultTexts = [
             "T1T2 đều rõ không có tiếng bệnh lý",                               // 0: Tuần hoàn
@@ -85,7 +151,7 @@
             "Không có dấu hiệu tâm thần kinh",                                  // 7: Tâm thần
             "Hiện tại bình thường",                                             // 8: Ngoại khoa
             "Hiện tại bình thường",                                             // 9: Da liễu
-            "",                                                                 // 10: Sản phụ khoa -> KHÔNG ĐIỀN
+            "",                                                                 // 10: Sản phụ khoa -> BỎ TRỐNG
             "Hiện tại bình thường",                                             // 11: Mắt khác
             "Hiện tại bình thường",                                             // 12: TMH
             "Bình thường",                                                      // 13: Hàm trên
@@ -93,11 +159,11 @@
             "Hiện tại bình thường"                                              // 15: RHM
         ];
         for (let i = 0; i < defaultTexts.length; i++) {
-            if (i === 10) continue; // Sản phụ khoa: BỎ QUA KHÔNG ĐIỀN
+            if (i === 10) continue; // Sản phụ khoa: BỎ QUA HOÀN TOÀN
             if (textareasLS[i]) setAngularValue(textareasLS[i], defaultTexts[i]);
         }
 
-        // 1.2 Điền thị lực Mắt CHÍNH XÁC theo name: Không kính P = 6, Không kính T = 7, Có kính BỎ TRỐNG
+        // 2.2 Điền thị lực Mắt CHÍNH XÁC: Không kính P = 6, Không kính T = 7, Có kính BỎ TRỐNG
         const inpKKPhai = paneLS.querySelector('input[name="khong_kinh_mat_phai"]') || paneLS.querySelectorAll('input[placeholder="Nhập giá trị từ 0 đến 10"]')[0];
         const inpKKTrai = paneLS.querySelector('input[name="khong_kinh_mat_trai"]') || paneLS.querySelectorAll('input[placeholder="Nhập giá trị từ 0 đến 10"]')[1];
         const inpCKPhai = paneLS.querySelector('input[name="co_kinh_mat_phai"]') || paneLS.querySelectorAll('input[placeholder="Nhập giá trị từ 0 đến 10"]')[2];
@@ -108,24 +174,27 @@
         if (inpCKPhai) setAngularValue(inpCKPhai, "");
         if (inpCKTrai) setAngularValue(inpCKTrai, "");
 
-        // 1.3 Điền thính lực Tai Mũi Họng (5m / 0.5m)
+        // 2.3 Điền thính lực Tai Mũi Họng (5m / 0.5m)
         const inputsTai = Array.from(paneLS.querySelectorAll('input[placeholder="m"]'));
         if (inputsTai[0]) setAngularValue(inputsTai[0], "5");
         if (inputsTai[1]) setAngularValue(inputsTai[1], "0.5");
         if (inputsTai[2]) setAngularValue(inputsTai[2], "5");
         if (inputsTai[3]) setAngularValue(inputsTai[3], "0.5");
 
-        // 1.4 Điền tất cả Dropdown
+        // 2.4 Phân loại & Bác sĩ chuyên khoa
         const selectsLS = Array.from(paneLS.querySelectorAll('nz-select'));
         for (let i = 0; i < selectsLS.length; i += 2) {
-            if (i === 20) continue; // Sản phụ khoa: BỎ QUA
+            if (i === 20) continue; // Sản phụ khoa: BỎ QUA HOÀN TOÀN
 
             // Phân loại: Loại II: Khỏe
             if (selectsLS[i]) {
-                await selectOptionByText(selectsLS[i], "Loại II: Khỏe");
+                await selectOption(selectsLS[i], "Loại II: Khỏe");
             }
 
             // Bác sĩ chuyên khoa:
+            // Ngoại khoa, Da liễu: BS 06 (Mai Ngọc Tuấn)
+            // Mắt, TMH, RHM: BS 24 (Nguyễn Thị Dung)
+            // Các khoa khác: BS 04 (Tô Chí Sơn)
             if (selectsLS[i + 1]) {
                 let docCode = "04";
                 let docName = "Tô Chí Sơn";
@@ -138,16 +207,16 @@
                     docName = "Nguyễn Thị Dung";
                 }
 
-                await selectOptionByText(selectsLS[i + 1], docCode, docName);
+                await selectOption(selectsLS[i + 1], docCode, docName);
             }
         }
 
-        // 2. CHUYỂN SANG TAB KẾT LUẬN
+        // 3. CHUYỂN SANG TAB KẾT LUẬN
         if (statusEl) statusEl.innerText = '⏳ Đang điền Kết Luận...';
-        await clickTab('KẾT LUẬN');
-        const paneKL = getActivePane();
+        await clickSubTab('KẾT LUẬN');
+        const paneKL = document.querySelector('.vertical-tabs .ant-tabs-tabpane-active') || document;
 
-        // 2.1 Chọn Phân loại sức khỏe: Loại II: Khỏe
+        // 3.1 Chọn Phân loại sức khỏe: Loại II: Khỏe
         const cbsKL = Array.from(paneKL.querySelectorAll('.ant-checkbox-wrapper'));
         const cbLoai2 = cbsKL.find(c => c.innerText.includes('Loại II: Khỏe') || c.innerText.includes('Loại II:'));
         if (cbLoai2 && !cbLoai2.classList.contains('ant-checkbox-wrapper-checked')) {
@@ -158,20 +227,20 @@
             if (c.classList.contains('ant-checkbox-wrapper-checked')) c.click();
         });
 
-        // 2.2 Tick "Xác nhận kết thúc khám"
+        // 3.2 Tick "Xác nhận kết thúc khám"
         const cbKetThuc = cbsKL.find(c => c.innerText.includes('Xác nhận kết thúc khám') || c.closest('div')?.innerText?.includes('Xác nhận kết thúc khám')) || cbsKL[cbsKL.length - 1];
         if (cbKetThuc && !cbKetThuc.classList.contains('ant-checkbox-wrapper-checked')) {
             cbKetThuc.click();
         }
 
-        // 2.3 Bác sĩ kết luận: Chính xác là selectsKL[1] (select thứ 2 trong tab KẾT LUẬN)
+        // 3.3 Bác sĩ kết luận: BS 02 (Nguyễn Thị Nga)
         const selectsKL = Array.from(paneKL.querySelectorAll('nz-select'));
         const docSelectKL = selectsKL[1] || selectsKL[selectsKL.length - 1];
         if (docSelectKL) {
-            await selectOptionByText(docSelectKL, "02", "Nguyễn Thị Nga");
+            await selectOption(docSelectKL, "02", "Nguyễn Thị Nga");
         }
 
-        // 2.4 Thời gian kết thúc khám (Giờ 24h)
+        // 3.4 Giờ kết thúc: 07:45
         const timeInput = paneKL.querySelector('input[placeholder="__:__"]');
         if (timeInput) {
             const curVal = timeInput.value || '';
@@ -179,7 +248,7 @@
             setAngularValue(timeInput, morningVal);
         }
 
-        // 3. TỰ ĐỘNG BẤM LƯU
+        // 3.5 Tự động bấm Lưu (F11)
         if (statusEl) statusEl.innerText = '⏳ Đang bấm Lưu...';
         await delay(350);
         const saveBtn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.trim() === 'Lưu' || b.innerText.includes('Lưu (F11)'));
@@ -191,17 +260,30 @@
         }
     }
 
-    async function masterAutoFill() {
+    let isRunning = false;
+
+    // ----------------------------------------------------
+    // 3. QUY TRÌNH TOÀN DIỆN (TIẾP ĐÓN -> KHÁM KSK -> TỰ ĐỘNG LƯU)
+    // ----------------------------------------------------
+    async function runFullWorkflow() {
         if (isRunning) return;
         isRunning = true;
         const statusEl = document.getElementById('his-panel-status');
         const runBtn = document.getElementById('his-panel-run-btn');
         if (runBtn) {
             runBtn.disabled = true;
-            runBtn.innerText = '⏳ Đang điền tự động...';
+            runBtn.innerText = '⏳ Đang thực hiện quy trình...';
         }
 
         try {
+            // Bước 1: Điền cấu hình tiếp đón nếu đang ở tab Tiếp đón
+            const activeTopTab = document.querySelector('.tab-app-main .ant-tabs-tab-active')?.innerText || '';
+            if (activeTopTab.includes('Tiếp đón')) {
+                await fillTiepDonConfig(statusEl);
+                await delay(500);
+            }
+
+            // Bước 2: Điền Khám lâm sàng & Kết luận rồi tự động lưu
             await fillKhamLamSangVaKetLuan(statusEl);
         } catch (e) {
             console.error('Lỗi tự động hóa:', e);
@@ -210,51 +292,61 @@
             isRunning = false;
             if (runBtn) {
                 runBtn.disabled = false;
-                runBtn.innerText = '⚡ BẮT ĐẦU ĐIỀN TỰ ĐỘNG (F9)';
+                runBtn.innerText = '🚀 TỰ ĐỘNG ĐIỀN & LƯU (F9)';
             }
         }
     }
 
     // ----------------------------------------------------
-    // BẢNG ĐIỀU KHIỂN GIAO DIỆN (PANEL) TRỰC QUAN
+    // 4. BẢNG ĐIỀU KHIỂN GIAO DIỆN (PANEL) TRỰC QUAN
     // ----------------------------------------------------
-    function createControlPanel() {
+    function mountControlPanel() {
         if (document.getElementById('his-tool-control-panel')) return;
 
         const panel = document.createElement('div');
         panel.id = 'his-tool-control-panel';
         panel.style.position = 'fixed';
-        panel.style.bottom = '20px';
-        panel.style.right = '20px';
+        panel.style.bottom = '15px';
+        panel.style.right = '15px';
         panel.style.width = '390px';
         panel.style.backgroundColor = '#ffffff';
         panel.style.borderRadius = '12px';
-        panel.style.boxShadow = '0 10px 30px rgba(0,0,0,0.35)';
+        panel.style.boxShadow = '0 12px 35px rgba(0,0,0,0.4)';
         panel.style.zIndex = '2147483647';
         panel.style.fontFamily = 'Segoe UI, Tahoma, Geneva, Verdana, sans-serif';
         panel.style.border = '2px solid #fa8c16';
         panel.style.overflow = 'hidden';
 
         panel.innerHTML = `
-            <div style="background: linear-gradient(135deg, #fa8c16, #ff7a45); color: white; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 14px;">
-                <span>⚡ BẢNG ĐIỀU KHIỂN - TỰ ĐỘNG ĐIỀN HIS</span>
-                <button id="his-panel-toggle-btn" style="background: rgba(255,255,255,0.2); border: none; color: white; font-size: 13px; cursor: pointer; border-radius: 4px; padding: 2px 8px;">➖ Thu nhỏ</button>
+            <div style="background: linear-gradient(135deg, #fa8c16, #ff7a45); color: white; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 13px;">
+                <span>⚡ BẢNG ĐIỀU KHIỂN - TỰ ĐỘNG ĐIỀN HIS V2</span>
+                <div>
+                    <button id="his-panel-reload-btn" title="Tải lại bảng điều khiển" style="background: rgba(255,255,255,0.25); border: none; color: white; font-size: 12px; cursor: pointer; border-radius: 4px; padding: 2px 7px; margin-right: 4px;">🔄</button>
+                    <button id="his-panel-toggle-btn" style="background: rgba(255,255,255,0.25); border: none; color: white; font-size: 12px; cursor: pointer; border-radius: 4px; padding: 2px 8px;">➖ Thu nhỏ</button>
+                </div>
             </div>
-            <div id="his-panel-body" style="padding: 14px; font-size: 12px; color: #262626; line-height: 1.6; max-height: 420px; overflow-y: auto;">
-                <div style="background: #e6f7ff; border: 1px solid #91d5ff; padding: 10px; border-radius: 6px; margin-bottom: 12px;">
-                    <b style="color: #096dd9;">🎯 Cấu hình mới cập nhật:</b><br>
-                    • Phân loại: <b>Loại II: Khỏe</b><br>
-                    • Ngoại khoa & Da liễu: <b>BS 06 (Mai Ngọc Tuấn)</b><br>
-                    • Sản phụ khoa: <b>BỎ TRỐNG (Không điền)</b><br>
-                    • Mắt: <b>Không kính: 6 - 7 (Có kính: không nhập)</b> | Bác sĩ: <b>BS 24 (Nguyễn Thị Dung)</b><br>
-                    • Tai Mũi Họng: <b>BS 24</b> | Răng Hàm Mặt: <b>BS 24</b><br>
-                    • Bác sĩ kết luận: <b>BS 02 (Nguyễn Thị Nga)</b>
+            <div id="his-panel-body" style="padding: 12px; font-size: 12px; color: #262626; line-height: 1.5;">
+                <div style="background: #f6ffed; border: 1px solid #b7eb8f; padding: 8px 10px; border-radius: 6px; margin-bottom: 10px; font-size: 11px;">
+                    <b style="color: #389e0d;">🎯 Chuẩn hóa tự động:</b><br>
+                    • <b>Tiếp đón</b>: Nghề nghiệp (Khác), Mẫu KSK 18+, Đối tượng KSK khác, Nguồn KP Xã hội hoá, Lý do KSK định kỳ.<br>
+                    • <b>Lâm sàng</b>: Ngoại/Da (BS 06), Mắt/TMH/RHM (BS 24), Sản phụ khoa (Bỏ trống), Mắt không kính (6 - 7).<br>
+                    • <b>Kết luận</b>: Loại II Khỏe, BS 02 Nguyễn Thị Nga, Giờ 07:45 & Tự động bấm Lưu.
                 </div>
 
-                <button id="his-panel-run-btn" style="width: 100%; padding: 12px; background: #fa8c16; color: white; border: none; border-radius: 6px; font-size: 14px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 10px rgba(250,140,22,0.4); transition: 0.2s;">
-                    🚀 BẮT ĐẦU ĐIỀN TỰ ĐỘNG (F9)
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+                    <button id="btn-fill-td-only" style="padding: 9px 6px; background: #fa8c16; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; box-shadow: 0 2px 6px rgba(250,140,22,0.35);">
+                        ⚡ 1. Điền Tiếp Đón
+                    </button>
+                    <button id="btn-fill-ls-only" style="padding: 9px 6px; background: #1890ff; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; box-shadow: 0 2px 6px rgba(24,144,255,0.35);">
+                        🩺 2. Khám & Lưu
+                    </button>
+                </div>
+
+                <button id="his-panel-run-btn" style="width: 100%; padding: 10px; background: #52c41a; color: white; border: none; border-radius: 6px; font-size: 13px; font-weight: bold; cursor: pointer; box-shadow: 0 3px 8px rgba(82,196,26,0.35);">
+                    🚀 TỰ ĐỘNG ĐIỀN & LƯU (F9)
                 </button>
-                <div id="his-panel-status" style="text-align: center; margin-top: 8px; font-weight: bold; color: #52c41a; font-size: 13px;"></div>
+
+                <div id="his-panel-status" style="text-align: center; margin-top: 8px; font-weight: bold; color: #52c41a; font-size: 11px;"></div>
             </div>
         `;
 
@@ -263,23 +355,45 @@
         let isCollapsed = false;
         const body = document.getElementById('his-panel-body');
         const toggleBtn = document.getElementById('his-panel-toggle-btn');
-        toggleBtn.onclick = () => {
-            isCollapsed = !isCollapsed;
-            body.style.display = isCollapsed ? 'none' : 'block';
-            toggleBtn.innerText = isCollapsed ? '➕ Mở rộng' : '➖ Thu nhỏ';
-        };
+        if (toggleBtn) {
+            toggleBtn.onclick = () => {
+                isCollapsed = !isCollapsed;
+                body.style.display = isCollapsed ? 'none' : 'block';
+                toggleBtn.innerText = isCollapsed ? '➕ Mở rộng' : '➖ Thu nhỏ';
+            };
+        }
+
+        const reloadBtn = document.getElementById('his-panel-reload-btn');
+        if (reloadBtn) {
+            reloadBtn.onclick = () => {
+                panel.remove();
+                mountControlPanel();
+            };
+        }
+
+        const statusEl = document.getElementById('his-panel-status');
+
+        const btnTdOnly = document.getElementById('btn-fill-td-only');
+        if (btnTdOnly) btnTdOnly.onclick = () => fillTiepDonConfig(statusEl);
+
+        const btnLsOnly = document.getElementById('btn-fill-ls-only');
+        if (btnLsOnly) btnLsOnly.onclick = () => fillKhamLamSangVaKetLuan(statusEl);
 
         const runBtn = document.getElementById('his-panel-run-btn');
-        runBtn.onclick = masterAutoFill;
+        if (runBtn) runBtn.onclick = runFullWorkflow;
     }
 
+    // Lắng nghe phím tắt F9
     window.addEventListener('keydown', (e) => {
         if (e.key === 'F9') {
             e.preventDefault();
-            masterAutoFill();
+            runFullWorkflow();
         }
     });
 
-    createControlPanel();
-    setInterval(createControlPanel, 1500);
+    // Khởi tạo và tự động remount khi chuyển tab
+    mountControlPanel();
+    if (window._hisAutoRemountTimer) clearInterval(window._hisAutoRemountTimer);
+    window._hisAutoRemountTimer = setInterval(mountControlPanel, 1500);
+
 })();
