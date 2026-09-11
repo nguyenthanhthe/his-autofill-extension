@@ -250,61 +250,68 @@
     }
 
     // ----------------------------------------------------
-    // 2. KHÂU 2: CHUYỂN TỪ DANH SÁCH SANG KHÁM SỨC KHỎE
+    // 2. KHÂU 2: CHUYỂN SANG KHÁM SỨC KHỎE (F6) AN TOÀN
     // ----------------------------------------------------
-    async function openPatientExamFromList(statusEl, expectedPatientName) {
-        if (statusEl) statusEl.innerText = '⏳ Đang chuyển sang Danh sách khám sức khoẻ...';
+    async function navigateToKhamSucKhoe(statusEl, expectedPatientName) {
+        if (statusEl) statusEl.innerText = '⏳ Đang chuyển sang tab Khám sức khỏe (F6)...';
 
-        let switched = await clickMainTab('Danh sách khám sức khoẻ');
-        if (!switched) {
-            const menuItems = Array.from(document.querySelectorAll('.ant-menu-item, li, a'));
-            const dsMenu = menuItems.find(m => m.innerText.trim() === 'Danh sách khám sức khoẻ');
-            if (dsMenu) {
-                dsMenu.click();
-                await delay(600);
-                switched = true;
-            }
+        // 1. Ưu tiên hàng đầu: Chuyển trực tiếp sang tab "Khám sức khỏe định kỳ" đã mở
+        let switched = await clickMainTab('Khám sức khỏe định kỳ') || await clickMainTab('Khám sức khỏe');
+        if (switched) {
+            await delay(400);
+            if (statusEl) statusEl.innerText = '✅ Đã chuyển thẳng vào tab Khám sức khỏe (F6)!';
+            return true;
         }
+
+        // 2. Nếu tab chưa mở sẵn, thử mở từ menu chức năng
+        const menuItems = Array.from(document.querySelectorAll('.ant-menu-item, li, a'));
+        const kskMenu = menuItems.find(m => m.innerText.trim() === 'Khám sức khỏe định kỳ');
+        if (kskMenu) {
+            kskMenu.click();
+            await delay(500);
+            switched = await clickMainTab('Khám sức khỏe định kỳ') || await clickMainTab('Khám sức khỏe');
+            if (switched) return true;
+        }
+
+        // 3. Nếu chưa mở tab và có tên bệnh nhân: kiểm tra danh sách CÓ BẢO VỆ DANH TÍNH CHÍNH XÁC
+        // Tuyệt đối KHÔNG tự ý mở bừa dòng 1 nếu không đúng tên người vừa tiếp đón!
+        if (statusEl) statusEl.innerText = '⏳ Đang tìm đúng hồ sơ bệnh nhân trong hệ thống...';
+        await clickMainTab('Danh sách khám sức khoẻ');
         await delay(500);
 
         const pane = document.querySelector('.tab-app-main > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane-active');
-        if (!pane) throw new Error('Không tìm thấy giao diện Danh sách khám sức khoẻ');
+        if (!pane) throw new Error('Không tìm thấy giao diện Khám sức khỏe');
 
-        const buttons = Array.from(pane.querySelectorAll('button'));
-        const searchBtn = buttons.find(b => b.innerText.trim() === 'Tìm kiếm');
-        if (searchBtn) {
-            searchBtn.click();
-            await delay(600);
-        }
+        const filterInput = pane.querySelector('input[name="filter"]');
+        const searchBtn = Array.from(pane.querySelectorAll('button')).find(b => b.innerText.trim() === 'Tìm kiếm');
 
-        for (let i = 0; i < 20; i++) {
-            if (!pane.querySelector('.ant-spin-spinning')) break;
-            await delay(150);
-        }
-
-        if (statusEl) statusEl.innerText = '⏳ Đang mở hồ sơ khám bệnh nhân hàng đầu...';
-
-        let firstDataRow = pane.querySelector('tbody tr:not([nz-table-measure-row])');
-
-        if (expectedPatientName && firstDataRow) {
-            for (let retry = 0; retry < 3; retry++) {
-                if (firstDataRow.innerText.includes(expectedPatientName)) break;
-                if (searchBtn) {
-                    searchBtn.click();
-                    await delay(700);
-                    firstDataRow = pane.querySelector('tbody tr:not([nz-table-measure-row])');
-                }
+        if (filterInput && expectedPatientName) {
+            setAngularValue(filterInput, expectedPatientName);
+            if (searchBtn) {
+                searchBtn.click();
+                await delay(700);
             }
         }
 
-        let stethoBtn = firstDataRow ? firstDataRow.querySelector('button.ant-btn-primary') : null;
-        if (!stethoBtn) {
-            stethoBtn = pane.querySelector('tbody tr button.ant-btn-primary i.anticon-ph\\:stethoscope')?.closest('button') ||
-                        pane.querySelector('tbody tr button.ant-btn-primary');
+        // Kiểm tra chính xác dòng kết quả
+        const rows = Array.from(pane.querySelectorAll('tbody tr:not([nz-table-measure-row])'));
+        let targetRow = null;
+
+        if (expectedPatientName) {
+            const cleanExpected = expectedPatientName.trim().toLowerCase();
+            targetRow = rows.find(r => r.innerText.toLowerCase().includes(cleanExpected));
         }
 
+        // BẢO VỆ DỮ LIỆU: Không tìm thấy đúng người -> Dừng ngay lập tức, không mở bừa người khác
+        if (!targetRow) {
+            throw new Error(`⚠️ Không tìm thấy hồ sơ của bệnh nhân "${expectedPatientName || 'vừa tiếp đón'}". Vui lòng mở thủ công trên màn hình Khám sức khỏe (F6) để tránh ghi nhầm dữ liệu người khác!`);
+        }
+
+        const stethoBtn = targetRow.querySelector('button.ant-btn-primary') ||
+                          targetRow.querySelector('i.anticon-ph\\:stethoscope')?.closest('button');
+
         if (!stethoBtn) {
-            throw new Error('Không tìm thấy nút khám (ống nghe) của bệnh nhân trong danh sách');
+            throw new Error('Không tìm thấy nút khám của đúng bệnh nhân trong danh sách');
         }
 
         stethoBtn.click();
@@ -312,7 +319,7 @@
 
         for (let i = 0; i < 20; i++) {
             const activeTab = document.querySelector('.tab-app-main .ant-tabs-tab-active')?.innerText?.trim() || '';
-            if (activeTab.includes('Khám sức khỏe định kỳ')) {
+            if (activeTab.includes('Khám sức khỏe')) {
                 await delay(400);
                 return true;
             }
@@ -497,30 +504,31 @@
     }
 
     // ----------------------------------------------------
-    // 4. QUY TRÌNH LIÊN HOÀN (TIẾP ĐÓN -> KHÁM -> LƯU)
+    // 4. QUY TRÌNH LIÊN HOÀN (TIẾP ĐÓN -> KHÁM SỨC KHỎE (F6) -> LƯU)
     // ----------------------------------------------------
     async function runFullWorkflow(statusEl) {
         const nameInput = document.querySelector('input[name="tenDayDu"]');
         const expectedPatientName = nameInput ? nameInput.value.trim() : '';
 
         if (!expectedPatientName) {
-            throw new Error('Chưa nhập Họ và tên người khám tại Tiếp đón!');
+            throw new Error('Chưa nhập Họ và tên người khám tại màn hình Tiếp đón!');
         }
 
-        if (statusEl) statusEl.innerText = '🚀 [1/4] Đang điền Tiếp đón bắt buộc...';
+        if (statusEl) statusEl.innerText = '🚀 [1/3] Đang điền Tiếp đón bắt buộc...';
         await fillTiepDonConfig(statusEl);
+        await delay(400);
+
+        if (statusEl) statusEl.innerText = '🚀 [2/3] Đang lưu Tiếp đón (F11)...';
+        await saveTiepDon(statusEl);
         await delay(500);
 
-        if (statusEl) statusEl.innerText = '🚀 [2/4] Đang lưu Tiếp đón...';
-        await saveTiepDon(statusEl);
+        if (statusEl) statusEl.innerText = '🚀 [3/3] Đang chuyển sang Khám sức khỏe (F6)...';
+        await navigateToKhamSucKhoe(statusEl, expectedPatientName);
+        await delay(300);
 
-        if (statusEl) statusEl.innerText = '🚀 [3/4] Đang chuyển sang Danh sách & mở Khám...';
-        await openPatientExamFromList(statusEl, expectedPatientName);
-
-        if (statusEl) statusEl.innerText = '🚀 [4/4] Đang điền Thể lực, Lâm sàng, Kết luận & Lưu...';
         await fillKhamTheoBangGiaoDien(statusEl);
 
-        if (statusEl) statusEl.innerText = '🎉 HOÀN TẤT LIÊN HOÀN: Tiếp đón ➔ Mở khám ➔ Điền & Đã lưu!';
+        if (statusEl) statusEl.innerText = '🎉 HOÀN TẤT LIÊN HOÀN: Tiếp đón ➔ Khám sức khỏe (F6) ➔ Đã lưu thành công!';
     }
 
     function readConfigFromUI() {
@@ -688,16 +696,31 @@
             if (activeTopTab.includes('Tiếp đón')) {
                 await runFullWorkflow(statusEl);
             } else {
+                if (!activeTopTab.includes('Khám sức khỏe')) {
+                    await clickMainTab('Khám sức khỏe định kỳ') || await clickMainTab('Khám sức khỏe');
+                }
                 await fillKhamTheoBangGiaoDien(statusEl);
             }
-        }, runBtn, '🚀 ĐIỀN KHÁM THEO BẢNG & LƯU (F9)');
+        }, runBtn, '🚀 ĐIỀN KHÁM SỨC KHỎE & LƯU (F6)');
+    }
+
+    async function handleSwitchKhamClick() {
+        const btnSwitch = document.getElementById('btn-switch-kham');
+        await executeSafe(async (statusEl) => {
+            const switched = await clickMainTab('Khám sức khỏe định kỳ') || await clickMainTab('Khám sức khỏe');
+            if (switched) {
+                if (statusEl) statusEl.innerText = '✅ Đã chuyển sang màn hình Khám sức khỏe (F6)!';
+            } else {
+                throw new Error('Chưa mở tab Khám sức khỏe định kỳ trên thanh tab!');
+            }
+        }, btnSwitch, '🩺 2. Mở Khám SK (F6)');
     }
 
     async function handleFullFlowClick() {
         const btnFullFlow = document.getElementById('btn-full-flow');
         await executeSafe(async (statusEl) => {
             await runFullWorkflow(statusEl);
-        }, btnFullFlow, '🔄 2. Tiếp Đón ➔ Khám ➔ Lưu');
+        }, btnFullFlow, '🔄 Tiếp Đón ➔ Khám Sức Khỏe (F6) ➔ Lưu');
     }
 
     async function handleTiepDonOnlyClick() {
@@ -998,13 +1021,18 @@
                     <button id="btn-fill-td-only" style="padding: 8px 4px; background: #fa8c16; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; box-shadow: 0 2px 6px rgba(250,140,22,0.35);">
                         ⚡ 1. Điền Tiếp Đón (*)
                     </button>
-                    <button id="btn-full-flow" style="padding: 8px 4px; background: #722ed1; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; box-shadow: 0 2px 6px rgba(114,46,209,0.35);">
-                        🔄 2. Tiếp Đón ➔ Khám ➔ Lưu
+                    <button id="btn-switch-kham" style="padding: 8px 4px; background: #1890ff; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; box-shadow: 0 2px 6px rgba(24,144,255,0.35);">
+                        🩺 2. Mở Khám SK (F6)
+                    </button>
+                </div>
+                <div style="margin-bottom: 8px;">
+                    <button id="btn-full-flow" style="width: 100%; padding: 8px 4px; background: #722ed1; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; box-shadow: 0 2px 6px rgba(114,46,209,0.35);">
+                        🔄 Tiếp Đón ➔ Khám Sức Khỏe (F6) ➔ Lưu
                     </button>
                 </div>
 
                 <button id="his-panel-run-btn" style="width: 100%; padding: 11px; background: #52c41a; color: white; border: none; border-radius: 7px; font-size: 13px; font-weight: bold; cursor: pointer; box-shadow: 0 3px 10px rgba(82,196,26,0.4);">
-                    🚀 ĐIỀN KHÁM THEO BẢNG & LƯU (F9)
+                    🚀 ĐIỀN KHÁM SỨC KHỎE THEO BẢNG & LƯU (F6)
                 </button>
 
                 <div id="his-panel-status" style="text-align: center; margin-top: 8px; font-weight: bold; color: #52c41a; font-size: 11px;"></div>
@@ -1079,6 +1107,9 @@
         const btnTdOnly = document.getElementById('btn-fill-td-only');
         if (btnTdOnly) btnTdOnly.onclick = handleTiepDonOnlyClick;
 
+        const btnSwitchKham = document.getElementById('btn-switch-kham');
+        if (btnSwitchKham) btnSwitchKham.onclick = handleSwitchKhamClick;
+
         const btnFullFlow = document.getElementById('btn-full-flow');
         if (btnFullFlow) btnFullFlow.onclick = handleFullFlowClick;
 
@@ -1090,12 +1121,9 @@
         window.removeEventListener('keydown', window._hisKeydownHandler);
     }
     window._hisKeydownHandler = (e) => {
-        if (e.key === 'F9') {
+        if (e.key === 'F6' || e.key === 'F9') {
             e.preventDefault();
             handleSmartRun();
-        } else if (e.key === 'F10') {
-            e.preventDefault();
-            handleFullFlowClick();
         }
     };
     window.addEventListener('keydown', window._hisKeydownHandler);

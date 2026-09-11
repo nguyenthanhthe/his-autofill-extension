@@ -79,24 +79,25 @@ Bác sĩ bấm vào mục **`📝 Tùy chỉnh 16 Nội dung khám lâm sàng (X
 
 Tùy vào quy trình đón tiếp và phân công tại cơ sở, Bác sĩ có thể chọn 1 trong 3 cách sau:
 
-### CÁCH 1: Quy trình liên hoàn tự động (Tiếp đón ➔ Sang Khám ➔ Lưu bệnh án)
-*Áp dụng khi Bác sĩ làm trọn gói từ khâu tiếp nhận người bệnh:*
+### CÁCH 1: Quy trình liên hoàn an toàn (Tiếp đón ➔ Chuyển Khám Sức Khỏe (F6) ➔ Lưu)
+*Áp dụng khi Bác sĩ tiếp nhận và khám trực tiếp:*
 1. Tại tab **Tiếp đón khám sức khoẻ**, nhập Họ tên, Ngày sinh, Giới tính của người bệnh.
-2. Bấm nút màu tím **`🔄 2. Tiếp Đón ➔ Khám ➔ Lưu`** trên bảng điều khiển (hoặc nhấn phím **F10** trên bàn phím).
-3. **Công cụ sẽ tự động thực hiện liên hoàn:**
+2. Bấm nút màu tím **`🔄 Tiếp Đón ➔ Khám Sức Khỏe (F6) ➔ Lưu`** trên bảng điều khiển.
+3. **Công cụ sẽ tự động thực hiện an toàn:**
    - Tự điền các trường bắt buộc tại bàn tiếp đón: Giờ tiếp đón, Mẫu khám 18 tuổi trở lên, Đối tượng khác, Kinh phí xã hội hoá, Lý do khám định kỳ.
-   - Tự bấm **Lưu** tiếp đón.
-   - Tự chuyển sang **Danh sách khám sức khoẻ** và mở ngay hồ sơ bệnh án của người vừa tiếp đón.
+   - Tự bấm **Lưu** tiếp đón (F11).
+   - Tự chuyển thẳng sang màn hình **Khám sức khỏe định kỳ (F6)**, tuyệt đối không nhảy qua Danh sách để tránh nguy cơ mở nhầm hồ sơ của bệnh nhân khác.
    - Tự điền đầy đủ Thể lực, 16 nhận xét Lâm sàng, Bác sĩ các khoa, Phân loại sức khỏe, Giờ hoàn tất.
    - Tự bấm **Lưu bệnh án (F11)** hoàn tất!
 
 ---
 
-### CÁCH 2: Điền nhanh bệnh án đang mở (Khám & Lưu ngay)
-*Áp dụng khi Bác sĩ đang mở sẵn màn hình hồ sơ của người bệnh tại tab Khám sức khỏe định kỳ:*
-1. Chọn nhanh **Loại 1** hoặc **Loại 2** trên bảng điều khiển nếu cần đổi loại sức khỏe.
-2. Bấm nút màu xanh lá **`🚀 ĐIỀN KHÁM THEO BẢNG & LƯU (F9)`** (hoặc nhấn phím **F9** trên bàn phím).
-3. Công cụ sẽ tự động điền toàn bộ kết quả khám và lưu hồ sơ trong chưa đầy 3 giây.
+### CÁCH 2: Điền nhanh hồ sơ khám đang mở (Nhấn phím F6)
+*Áp dụng khi Bác sĩ đang mở hồ sơ của người bệnh tại tab Khám sức khỏe định kỳ:*
+1. Chọn nhanh **Loại 1** hoặc **Loại 2** trên bảng điều khiển nếu cần đổi phân loại.
+2. Bấm nút màu xanh lá **`🚀 ĐIỀN KHÁM SỨC KHỎE THEO BẢNG & LƯU (F6)`** (hoặc chỉ cần nhấn phím **F6** / **F9** trên bàn phím).
+3. Bác sĩ cũng có thể bấm nút **`🩺 2. Mở Khám SK (F6)`** bất kỳ lúc nào để chuyển ngay tới tab Khám sức khỏe.
+4. Công cụ sẽ tự động điền toàn bộ kết quả khám và lưu hồ sơ trong chưa đầy 3 giây.
 
 ---
 
