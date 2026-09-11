@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         HIS V2 - Tự Động Điền Khám Sức Khỏe & Tiếp Đón
 // @namespace    http://tampermonkey.net/
-// @version      4.2
-// @description  Tự động điền Tiếp đón (Nghề nghiệp, Mẫu KSK, Đối tượng KSK, Nguồn kinh phí, Lý do KSK) & Điền Khám lâm sàng + Kết luận tự động lưu trên hệ thống v20.ytecoso.vn
+// @version      4.3
+// @description  Tự động điền Tiếp đón (Nghề nghiệp, Mẫu KSK, Đối tượng KSK, Nguồn kinh phí, Lý do KSK) & Điền Thể lực (Mạch, Huyết áp), Khám lâm sàng + Kết luận tự động lưu trên hệ thống v20.ytecoso.vn
 // @author       ThanhThe
 // @match        https://v20.ytecoso.vn/*
 // @grant        none
@@ -80,7 +80,6 @@
 
     // ----------------------------------------------------
     // 1. KHÂU 1: ĐIỀN CẤU HÌNH TIẾP ĐÓN KHÁM SỨC KHỎE
-    // (Chỉ điền các thông tin mặc định theo quy chuẩn, không điền người thân)
     // ----------------------------------------------------
     async function fillTiepDonConfig(statusEl) {
         if (statusEl) statusEl.innerText = '⏳ Đang điền cấu hình Tiếp đón...';
@@ -90,34 +89,16 @@
         const topPanes = Array.from(document.querySelectorAll('.tab-app-main > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane'));
         const pane = topPanes[1] || document.querySelector('.ant-tabs-tabpane-active') || document;
 
-        // Giờ tiếp đón: 07:30 sáng
         const timeInputs = Array.from(pane.querySelectorAll('input[placeholder="__:__"]'));
         if (timeInputs[0]) setAngularValue(timeInputs[0], "07:30");
 
-        // Các dropdown bắt buộc (*)
         const selects = Array.from(pane.querySelectorAll('nz-select'));
 
-        // Nghề nghiệp: 00000 - Khác, Không xác định
-        if (selects[6]) {
-            await selectOption(selects[6], "00000", "Khác, Không xác định");
-        }
+        if (selects[6]) await selectOption(selects[6], "00000", "Khác, Không xác định");
+        if (selects[10]) await selectOption(selects[10], "từ đủ 18 tuổi trở lên");
+        if (selects[11]) await selectOption(selects[11], "Các đối tượng khác");
+        if (selects[12]) await selectOption(selects[12], "Xã hội hoá");
 
-        // Mẫu KSK: Mẫu khám sức khỏe dùng cho người từ đủ 18 tuổi trở lên
-        if (selects[10]) {
-            await selectOption(selects[10], "từ đủ 18 tuổi trở lên");
-        }
-
-        // Đối tượng KSK: Các đối tượng khác
-        if (selects[11]) {
-            await selectOption(selects[11], "Các đối tượng khác");
-        }
-
-        // Nguồn kinh phí: Xã hội hoá
-        if (selects[12]) {
-            await selectOption(selects[12], "Xã hội hoá");
-        }
-
-        // Lý do khám sức khoẻ: Khám sức khoẻ định kỳ
         const taLyDo = pane.querySelector('textarea[name="lyDoVaoVien"]') || pane.querySelector('textarea');
         if (taLyDo) setAngularValue(taLyDo, "Khám sức khoẻ định kỳ");
 
@@ -125,7 +106,7 @@
     }
 
     // ----------------------------------------------------
-    // 2. KHÂU 2: ĐIỀN KHÁM LÂM SÀNG & KẾT LUẬN (NGOẠI TRỪ THỂ LỰC)
+    // 2. KHÂU 2: ĐIỀN THỂ LỰC (MẠCH, HUYẾT ÁP), LÂM SÀNG & KẾT LUẬN
     // ----------------------------------------------------
     async function fillKhamLamSangVaKetLuan(statusEl) {
         if (statusEl) statusEl.innerText = '⏳ Đang chuyển sang Khám sức khỏe định kỳ...';
@@ -133,12 +114,33 @@
         // 1. Chuyển sang tab Khám sức khỏe định kỳ
         await clickMainTab('Khám sức khỏe định kỳ');
 
-        // 2. Chuyển sang tab KHÁM LÂM SÀNG (Bỏ qua Thể lực theo yêu cầu)
+        // 2. Điền Thể lực (Mạch & Huyết áp) nếu có giá trị
+        const machVal = document.getElementById('his-inp-mach')?.value?.trim();
+        const haVal = document.getElementById('his-inp-ha')?.value?.trim();
+
+        if (machVal || haVal) {
+            if (statusEl) statusEl.innerText = `⏳ Đang điền Thể lực (Mạch: ${machVal || '--'}, HA: ${haVal || '--'})...`;
+            await clickSubTab('THỂ LỰC');
+            const paneTL = document.querySelector('.vertical-tabs .ant-tabs-tabpane-active') || document;
+            const inputsTL = Array.from(paneTL.querySelectorAll('input'));
+
+            if (machVal && inputsTL[3]) setAngularValue(inputsTL[3], machVal);
+
+            const bpHolder = paneTL.querySelector('input[name="huyet_ap"]') || inputsTL[4];
+            if (haVal && bpHolder) setAngularValue(bpHolder, haVal);
+
+            const radiosTL = Array.from(paneTL.querySelectorAll('.ant-radio-wrapper'));
+            const rLoai2 = radiosTL.find(r => r.innerText.includes('Loại 2'));
+            if (rLoai2 && !rLoai2.classList.contains('ant-radio-wrapper-checked')) rLoai2.click();
+            await delay(250);
+        }
+
+        // 3. Điền KHÁM LÂM SÀNG
         if (statusEl) statusEl.innerText = '⏳ Đang điền Khám Lâm Sàng...';
         await clickSubTab('KHÁM LÂM SÀNG');
         const paneLS = document.querySelector('.vertical-tabs .ant-tabs-tabpane-active') || document;
 
-        // 2.1 Điền nội dung textareas 16 chuyên khoa
+        // 3.1 Điền nội dung textareas 16 chuyên khoa
         const textareasLS = Array.from(paneLS.querySelectorAll('textarea'));
         const defaultTexts = [
             "T1T2 đều rõ không có tiếng bệnh lý",                               // 0: Tuần hoàn
@@ -163,7 +165,7 @@
             if (textareasLS[i]) setAngularValue(textareasLS[i], defaultTexts[i]);
         }
 
-        // 2.2 Điền thị lực Mắt CHÍNH XÁC: Không kính P = 6, Không kính T = 7, Có kính BỎ TRỐNG
+        // 3.2 Điền thị lực Mắt: Không kính P = 6, T = 7; Có kính BỎ TRỐNG
         const inpKKPhai = paneLS.querySelector('input[name="khong_kinh_mat_phai"]') || paneLS.querySelectorAll('input[placeholder="Nhập giá trị từ 0 đến 10"]')[0];
         const inpKKTrai = paneLS.querySelector('input[name="khong_kinh_mat_trai"]') || paneLS.querySelectorAll('input[placeholder="Nhập giá trị từ 0 đến 10"]')[1];
         const inpCKPhai = paneLS.querySelector('input[name="co_kinh_mat_phai"]') || paneLS.querySelectorAll('input[placeholder="Nhập giá trị từ 0 đến 10"]')[2];
@@ -174,27 +176,20 @@
         if (inpCKPhai) setAngularValue(inpCKPhai, "");
         if (inpCKTrai) setAngularValue(inpCKTrai, "");
 
-        // 2.3 Điền thính lực Tai Mũi Họng (5m / 0.5m)
+        // 3.3 Điền thính lực Tai Mũi Họng (5m / 0.5m)
         const inputsTai = Array.from(paneLS.querySelectorAll('input[placeholder="m"]'));
         if (inputsTai[0]) setAngularValue(inputsTai[0], "5");
         if (inputsTai[1]) setAngularValue(inputsTai[1], "0.5");
         if (inputsTai[2]) setAngularValue(inputsTai[2], "5");
         if (inputsTai[3]) setAngularValue(inputsTai[3], "0.5");
 
-        // 2.4 Phân loại & Bác sĩ chuyên khoa
+        // 3.4 Phân loại & Bác sĩ chuyên khoa
         const selectsLS = Array.from(paneLS.querySelectorAll('nz-select'));
         for (let i = 0; i < selectsLS.length; i += 2) {
             if (i === 20) continue; // Sản phụ khoa: BỎ QUA HOÀN TOÀN
 
-            // Phân loại: Loại II: Khỏe
-            if (selectsLS[i]) {
-                await selectOption(selectsLS[i], "Loại II: Khỏe");
-            }
+            if (selectsLS[i]) await selectOption(selectsLS[i], "Loại II: Khỏe");
 
-            // Bác sĩ chuyên khoa:
-            // Ngoại khoa, Da liễu: BS 06 (Mai Ngọc Tuấn)
-            // Mắt, TMH, RHM: BS 24 (Nguyễn Thị Dung)
-            // Các khoa khác: BS 04 (Tô Chí Sơn)
             if (selectsLS[i + 1]) {
                 let docCode = "04";
                 let docName = "Tô Chí Sơn";
@@ -211,12 +206,12 @@
             }
         }
 
-        // 3. CHUYỂN SANG TAB KẾT LUẬN
+        // 4. CHUYỂN SANG TAB KẾT LUẬN
         if (statusEl) statusEl.innerText = '⏳ Đang điền Kết Luận...';
         await clickSubTab('KẾT LUẬN');
         const paneKL = document.querySelector('.vertical-tabs .ant-tabs-tabpane-active') || document;
 
-        // 3.1 Chọn Phân loại sức khỏe: Loại II: Khỏe
+        // 4.1 Chọn Phân loại sức khỏe: Loại II: Khỏe
         const cbsKL = Array.from(paneKL.querySelectorAll('.ant-checkbox-wrapper'));
         const cbLoai2 = cbsKL.find(c => c.innerText.includes('Loại II: Khỏe') || c.innerText.includes('Loại II:'));
         if (cbLoai2 && !cbLoai2.classList.contains('ant-checkbox-wrapper-checked')) {
@@ -227,20 +222,20 @@
             if (c.classList.contains('ant-checkbox-wrapper-checked')) c.click();
         });
 
-        // 3.2 Tick "Xác nhận kết thúc khám"
+        // 4.2 Tick "Xác nhận kết thúc khám"
         const cbKetThuc = cbsKL.find(c => c.innerText.includes('Xác nhận kết thúc khám') || c.closest('div')?.innerText?.includes('Xác nhận kết thúc khám')) || cbsKL[cbsKL.length - 1];
         if (cbKetThuc && !cbKetThuc.classList.contains('ant-checkbox-wrapper-checked')) {
             cbKetThuc.click();
         }
 
-        // 3.3 Bác sĩ kết luận: BS 02 (Nguyễn Thị Nga)
+        // 4.3 Bác sĩ kết luận: BS 02 (Nguyễn Thị Nga)
         const selectsKL = Array.from(paneKL.querySelectorAll('nz-select'));
         const docSelectKL = selectsKL[1] || selectsKL[selectsKL.length - 1];
         if (docSelectKL) {
             await selectOption(docSelectKL, "02", "Nguyễn Thị Nga");
         }
 
-        // 3.4 Giờ kết thúc: 07:45
+        // 4.4 Giờ kết thúc: 07:45
         const timeInput = paneKL.querySelector('input[placeholder="__:__"]');
         if (timeInput) {
             const curVal = timeInput.value || '';
@@ -248,13 +243,13 @@
             setAngularValue(timeInput, morningVal);
         }
 
-        // 3.5 Tự động bấm Lưu (F11)
+        // 4.5 Tự động bấm Lưu (F11)
         if (statusEl) statusEl.innerText = '⏳ Đang bấm Lưu...';
         await delay(350);
         const saveBtn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.trim() === 'Lưu' || b.innerText.includes('Lưu (F11)'));
         if (saveBtn) {
             saveBtn.click();
-            if (statusEl) statusEl.innerText = '✅ ĐÃ ĐIỀN XONG & ĐÃ LƯU (Loại II - BS 06/24/02)!';
+            if (statusEl) statusEl.innerText = '✅ ĐÃ ĐIỀN XONG & ĐÃ LƯU (Mạch 80, HA 100/60, Loại II)!';
         } else {
             if (statusEl) statusEl.innerText = '✅ ĐÃ ĐIỀN XONG (Vui lòng bấm Lưu)!';
         }
@@ -276,14 +271,11 @@
         }
 
         try {
-            // Bước 1: Điền cấu hình tiếp đón nếu đang ở tab Tiếp đón
             const activeTopTab = document.querySelector('.tab-app-main .ant-tabs-tab-active')?.innerText || '';
             if (activeTopTab.includes('Tiếp đón')) {
                 await fillTiepDonConfig(statusEl);
                 await delay(500);
             }
-
-            // Bước 2: Điền Khám lâm sàng & Kết luận rồi tự động lưu
             await fillKhamLamSangVaKetLuan(statusEl);
         } catch (e) {
             console.error('Lỗi tự động hóa:', e);
@@ -326,11 +318,18 @@
                 </div>
             </div>
             <div id="his-panel-body" style="padding: 12px; font-size: 12px; color: #262626; line-height: 1.5;">
-                <div style="background: #f6ffed; border: 1px solid #b7eb8f; padding: 8px 10px; border-radius: 6px; margin-bottom: 10px; font-size: 11px;">
-                    <b style="color: #389e0d;">🎯 Chuẩn hóa tự động:</b><br>
-                    • <b>Tiếp đón</b>: Nghề nghiệp (Khác), Mẫu KSK 18+, Đối tượng KSK khác, Nguồn KP Xã hội hoá, Lý do KSK định kỳ.<br>
-                    • <b>Lâm sàng</b>: Ngoại/Da (BS 06), Mắt/TMH/RHM (BS 24), Sản phụ khoa (Bỏ trống), Mắt không kính (6 - 7).<br>
-                    • <b>Kết luận</b>: Loại II Khỏe, BS 02 Nguyễn Thị Nga, Giờ 07:45 & Tự động bấm Lưu.
+                <div style="background: #f0f5ff; border: 1px solid #adc6ff; padding: 8px 10px; border-radius: 6px; margin-bottom: 8px;">
+                    <b style="color: #1d39c4;">🩺 Thể lực mẫu:</b>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 5px;">
+                        <div>
+                            <label style="font-size: 11px; color: #595959;">Mạch (lần/phút):</label>
+                            <input id="his-inp-mach" type="text" value="80" style="width: 100%; padding: 4px 6px; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; font-size: 12px; color: #1d39c4;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; color: #595959;">Huyết áp (mmHg):</label>
+                            <input id="his-inp-ha" type="text" value="100/60" style="width: 100%; padding: 4px 6px; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; font-size: 12px; color: #1d39c4;">
+                        </div>
+                    </div>
                 </div>
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
