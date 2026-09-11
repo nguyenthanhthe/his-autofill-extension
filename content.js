@@ -649,26 +649,26 @@
             if (!activeTopTab.includes('Khám sức khỏe')) {
                 const switched = await clickMainTab('Khám sức khỏe định kỳ') || await clickMainTab('Khám sức khỏe');
                 if (!switched) {
-                    throw new Error('Chưa mở tab Khám sức khỏe định kỳ trên thanh tab!');
+                    await navigateToKhamSucKhoe(statusEl);
                 }
             }
             await fillKhamTheoBangGiaoDien(statusEl);
-        }, runBtn, '🚀 ĐIỀN KHÁM SỨC KHỎE & LƯU (F6)');
+        }, runBtn, '🚀 ĐIỀN KẾT QUẢ KHÁM & LƯU (F9)');
     }
 
     async function handleSwitchKhamClick() {
         const btnSwitch = document.getElementById('btn-switch-kham');
         await executeSafe(async (statusEl) => {
             await navigateToKhamSucKhoe(statusEl);
-            if (statusEl) statusEl.innerText = '✅ Đã chuyển sang màn hình Khám sức khoẻ (F6)!';
-        }, btnSwitch, '🩺 2. Khám SK (F6)');
+            if (statusEl) statusEl.innerText = '✅ Đã mở màn hình Khám sức khoẻ!';
+        }, btnSwitch, '🩺 2. Mở Khám (F6)');
     }
 
     async function handleFullFlowClick() {
         const btnFullFlow = document.getElementById('btn-full-flow');
         await executeSafe(async (statusEl) => {
             await runFullWorkflow(statusEl);
-        }, btnFullFlow, '🔄 Tiếp Đón ➔ Khám Sức Khỏe (F6) ➔ Lưu');
+        }, btnFullFlow, '🔄 Tiếp Đón ➔ Khám ➔ Lưu');
     }
 
     async function handleTiepDonOnlyClick() {
@@ -970,17 +970,17 @@
                         ⚡ 1. Điền Tiếp Đón (*)
                     </button>
                     <button id="btn-switch-kham" style="padding: 8px 4px; background: #1890ff; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; box-shadow: 0 2px 6px rgba(24,144,255,0.35);">
-                        🩺 2. Khám SK (F6)
+                        🩺 2. Mở Khám (F6)
                     </button>
                 </div>
                 <div style="margin-bottom: 8px;">
                     <button id="btn-full-flow" style="width: 100%; padding: 8px 4px; background: #722ed1; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; box-shadow: 0 2px 6px rgba(114,46,209,0.35);">
-                        🔄 Tiếp Đón ➔ Khám Sức Khoẻ (F6) ➔ Lưu
+                        🔄 Quy Trình: Tiếp Đón ➔ Khám ➔ Lưu
                     </button>
                 </div>
 
                 <button id="his-panel-run-btn" style="width: 100%; padding: 11px; background: #52c41a; color: white; border: none; border-radius: 7px; font-size: 13px; font-weight: bold; cursor: pointer; box-shadow: 0 3px 10px rgba(82,196,26,0.4);">
-                    🚀 ĐIỀN KHÁM SỨC KHỎE THEO BẢNG & LƯU (F6)
+                    🚀 ĐIỀN KẾT QUẢ KHÁM & LƯU (F9)
                 </button>
 
                 <div id="his-panel-status" style="text-align: center; margin-top: 8px; font-weight: bold; color: #52c41a; font-size: 11px;"></div>
@@ -1069,9 +1069,17 @@
         window.removeEventListener('keydown', window._hisKeydownHandler);
     }
     window._hisKeydownHandler = (e) => {
-        if (e.key === 'F6' || e.key === 'F9') {
+        if (e.key === 'F9') {
             e.preventDefault();
             handleSmartRun();
+        } else if (e.key === 'F6') {
+            const activeTopTab = document.querySelector('.tab-app-main .ant-tabs-tab-active')?.innerText || '';
+            if (activeTopTab.includes('Tiếp đón')) {
+                handleSwitchKhamClick();
+            } else {
+                e.preventDefault();
+                handleSmartRun();
+            }
         }
     };
     window.addEventListener('keydown', window._hisKeydownHandler);
