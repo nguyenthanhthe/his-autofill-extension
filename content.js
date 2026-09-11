@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HIS V2 - Bảng Điều Khiển Khám Sức Khỏe & Tiếp Đón Đa Chuyên Khoa
 // @namespace    http://tampermonkey.net/
-// @version      7.0
+// @version      7.1
 // @description  Bảng giao diện tùy biến hoàn toàn cho bác sĩ: Bộ chọn nhanh Loại 1 / Loại 2, Tùy biến 16 nội dung khám lâm sàng, Thể lực, 7 Chuyên khoa Lâm sàng, Quy trình liên hoàn Tiếp đón -> Khám -> Tự Lưu không hardcode thông tin
 // @author       ThanhThe
 // @match        https://v20.ytecoso.vn/*
@@ -33,17 +33,13 @@
     };
 
     const defaultCfg = {
-        // Phân loại tổng thể: '1' (Loại 1 / Loại I: Rất khỏe) hoặc '2' (Loại 2 / Loại II: Khỏe)
         selectedLevel: '1',
-
-        // Thể lực
         height: '150',
         weight: '48',
         pulse: '80',
         bp: '100/60',
         theLucRadio: 'Loại 1',
 
-        // 7 Chuyên khoa lâm sàng (Mã bác sĩ & Trạng thái bỏ qua)
         docNoiKhoa: '04',
         skipNoiKhoa: false,
 
@@ -73,14 +69,12 @@
         docRhm: '24',
         skipRhm: false,
 
-        // Phân loại chuyên khoa & Kết luận
         plChuyenKhoa: 'Loại I: Rất khỏe',
         plKetLuan: 'Loại I: Rất khỏe',
         docKetLuan: '02',
         gioKetThuc: '07:45',
         autoSave: true,
 
-        // 16 Nội dung khám lâm sàng có thể tùy chỉnh
         examTexts: Object.assign({}, defaultExamTexts)
     };
 
@@ -154,10 +148,28 @@
             input.dispatchEvent(new KeyboardEvent('keyup', { key: textMatch[0] || 'a', bubbles: true }));
         }
 
+        const cleanMatch = textMatch.trim().toLowerCase();
+        // Regex word boundary: e.g. "04" or "4" matches word 04, not 24 or 40
+        const wordRegex = new RegExp(`(^|\\s|\\|)${cleanMatch}(\\s|\\||$)`, 'i');
+
         for (let i = 0; i < 25; i++) {
             await delay(80);
             const options = Array.from(document.querySelectorAll('.ant-select-item-option'));
-            const match = options.find(o => o.innerText.toLowerCase().includes(textMatch.toLowerCase()));
+            if (!options.length) continue;
+
+            // 1. Ưu tiên khớp chính xác theo ranh giới từ (mã bác sĩ: 04, 02, 06...)
+            let match = options.find(o => wordRegex.test(o.innerText));
+
+            // 2. Ưu tiên khớp tiền tố
+            if (!match) {
+                match = options.find(o => o.innerText.trim().toLowerCase().startsWith(cleanMatch));
+            }
+
+            // 3. Fallback khớp chứa chuỗi
+            if (!match) {
+                match = options.find(o => o.innerText.toLowerCase().includes(cleanMatch));
+            }
+
             if (match) {
                 match.click();
                 await delay(120);
@@ -166,6 +178,13 @@
         }
         document.body.click();
         return false;
+    };
+
+    const findInputByLabel = (container, labelText) => {
+        if (!container) return null;
+        const labels = Array.from(container.querySelectorAll('label, .ant-form-item-label'));
+        const target = labels.find(l => l.innerText.trim().includes(labelText));
+        return target ? target.closest('.ant-form-item, nz-form-item, div.row, div')?.querySelector('input') : null;
     };
 
     // ----------------------------------------------------
@@ -186,6 +205,7 @@
         const selects = Array.from(pane.querySelectorAll('nz-select'));
 
         if (selects[6]) await selectOption(selects[6], "00000");
+        if (selects[9]) await selectOption(selects[9], "Khám sức khoẻ định kỳ");
         if (selects[10]) await selectOption(selects[10], "từ đủ 18 tuổi trở lên");
         if (selects[11]) await selectOption(selects[11], "Các đối tượng khác");
         if (selects[12]) await selectOption(selects[12], "Xã hội hoá");
@@ -199,22 +219,31 @@
     async function saveTiepDon(statusEl) {
         if (statusEl) statusEl.innerText = '⏳ Đang bấm Lưu Tiếp đón (F11)...';
         const nameInput = document.querySelector('input[name="tenDayDu"]');
+        if (nameInput && !nameInput.value.trim()) {
+            throw new Error('Vui lòng nhập Họ và tên người khám tại màn hình Tiếp đón trước khi bấm Lưu!');
+        }
+
         const pane = nameInput ? nameInput.closest('.ant-tabs-tabpane') : (document.querySelector('.tab-app-main > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane-active') || document);
 
         const buttons = Array.from(pane.querySelectorAll('button'));
         const saveBtn = buttons.find(b => b.innerText.includes('Lưu (F11)') || (b.innerText.trim() === 'Lưu' && b.classList.contains('ant-btn-primary')));
-        if (saveBtn) {
-            saveBtn.click();
-            await delay(1200);
-            return true;
+        if (!saveBtn) throw new Error('Không tìm thấy nút Lưu Tiếp đón');
+
+        saveBtn.click();
+
+        // Chờ nút lưu hết trạng thái loading
+        for (let i = 0; i < 20; i++) {
+            await delay(150);
+            if (!saveBtn.classList.contains('ant-btn-loading')) break;
         }
-        return false;
+        await delay(500);
+        return true;
     }
 
     // ----------------------------------------------------
     // 2. KHÂU 2: CHUYỂN TỪ DANH SÁCH SANG KHÁM SỨC KHỎE
     // ----------------------------------------------------
-    async function openPatientExamFromList(statusEl) {
+    async function openPatientExamFromList(statusEl, expectedPatientName) {
         if (statusEl) statusEl.innerText = '⏳ Đang chuyển sang Danh sách khám sức khoẻ...';
 
         let switched = await clickMainTab('Danh sách khám sức khoẻ');
@@ -239,15 +268,33 @@
             await delay(600);
         }
 
-        if (statusEl) statusEl.innerText = '⏳ Đang mở hồ sơ khám bệnh nhân (hàng 1)...';
+        // Chờ bảng dữ liệu tải xong (không còn ant-spin-spinning)
+        for (let i = 0; i < 20; i++) {
+            if (!pane.querySelector('.ant-spin-spinning')) break;
+            await delay(150);
+        }
 
-        let stethoBtn = pane.querySelector('tbody tr:first-child button.ant-btn-primary') ||
-                        pane.querySelector('tbody tr button.ant-btn-primary i.anticon-ph\\:stethoscope')?.closest('button') ||
-                        pane.querySelector('tbody tr button.ant-btn-primary');
+        if (statusEl) statusEl.innerText = '⏳ Đang mở hồ sơ khám bệnh nhân hàng đầu...';
 
+        // Sử dụng :not([nz-table-measure-row]) để bỏ qua hàng đo kích thước ảo của Ng-Zorro
+        let firstDataRow = pane.querySelector('tbody tr:not([nz-table-measure-row])');
+
+        // Nếu có tên dự kiến, kiểm tra xem hàng đầu đã cập nhật bệnh nhân mới chưa
+        if (expectedPatientName && firstDataRow) {
+            for (let retry = 0; retry < 3; retry++) {
+                if (firstDataRow.innerText.includes(expectedPatientName)) break;
+                if (searchBtn) {
+                    searchBtn.click();
+                    await delay(700);
+                    firstDataRow = pane.querySelector('tbody tr:not([nz-table-measure-row])');
+                }
+            }
+        }
+
+        let stethoBtn = firstDataRow ? firstDataRow.querySelector('button.ant-btn-primary') : null;
         if (!stethoBtn) {
-            await delay(700);
-            stethoBtn = pane.querySelector('tbody tr:first-child button.ant-btn-primary') || pane.querySelector('tbody tr button.ant-btn-primary');
+            stethoBtn = pane.querySelector('tbody tr button.ant-btn-primary i.anticon-ph\\:stethoscope')?.closest('button') ||
+                        pane.querySelector('tbody tr button.ant-btn-primary');
         }
 
         if (!stethoBtn) {
@@ -285,12 +332,15 @@
             const paneTL = document.querySelector('.vertical-tabs .ant-tabs-tabpane-active') || document;
             const inputsTL = Array.from(paneTL.querySelectorAll('input'));
 
-            if (cfg.height && inputsTL[0]) setAngularValue(inputsTL[0], cfg.height);
-            if (cfg.weight && inputsTL[1]) setAngularValue(inputsTL[1], cfg.weight);
-            if (cfg.pulse && inputsTL[3]) setAngularValue(inputsTL[3], cfg.pulse);
+            const inpHeight = findInputByLabel(paneTL, 'Chiều cao') || inputsTL[0];
+            const inpWeight = findInputByLabel(paneTL, 'Cân nặng') || inputsTL[1];
+            const inpPulse = findInputByLabel(paneTL, 'Mạch') || inputsTL[3];
+            const inpBp = paneTL.querySelector('input[name="huyet_ap"]') || findInputByLabel(paneTL, 'Huyết áp') || inputsTL[4];
 
-            const bpHolder = paneTL.querySelector('input[name="huyet_ap"]') || inputsTL[4];
-            if (cfg.bp && bpHolder) setAngularValue(bpHolder, cfg.bp);
+            if (cfg.height && inpHeight) setAngularValue(inpHeight, cfg.height);
+            if (cfg.weight && inpWeight) setAngularValue(inpWeight, cfg.weight);
+            if (cfg.pulse && inpPulse) setAngularValue(inpPulse, cfg.pulse);
+            if (cfg.bp && inpBp) setAngularValue(inpBp, cfg.bp);
 
             if (cfg.theLucRadio) {
                 const radiosTL = Array.from(paneTL.querySelectorAll('.ant-radio-wrapper'));
@@ -311,7 +361,7 @@
         const selectsLS = Array.from(paneLS.querySelectorAll('nz-select'));
         const texts = cfg.examTexts || defaultExamTexts;
 
-        // 2.1 NỘI KHOA (8 chuyên khoa: Tuần hoàn, Hô hấp, Tiêu hóa, Thận, Nội tiết, Cơ xương khớp, Thần kinh, Tâm thần)
+        // 2.1 NỘI KHOA (8 chuyên khoa)
         if (!cfg.skipNoiKhoa) {
             const noiKhoaTexts = [
                 texts.tuanHoan || defaultExamTexts.tuanHoan,
@@ -326,35 +376,34 @@
             for (let i = 0; i < 8; i++) {
                 if (textareasLS[i]) setAngularValue(textareasLS[i], noiKhoaTexts[i]);
             }
-            // Điền 8 cặp dropdown Nội khoa (selects 0..15)
             for (let i = 0; i < 16; i += 2) {
                 if (selectsLS[i]) await selectOption(selectsLS[i], cfg.plChuyenKhoa || "Loại I: Rất khỏe");
                 if (selectsLS[i + 1] && cfg.docNoiKhoa) await selectOption(selectsLS[i + 1], cfg.docNoiKhoa);
             }
         }
 
-        // 2.2 NGOẠI KHOA (textarea 8, selects 16, 17)
+        // 2.2 NGOẠI KHOA
         if (!cfg.skipNgoaiKhoa) {
             if (textareasLS[8]) setAngularValue(textareasLS[8], texts.ngoaiKhoa || defaultExamTexts.ngoaiKhoa);
             if (selectsLS[16]) await selectOption(selectsLS[16], cfg.plChuyenKhoa || "Loại I: Rất khỏe");
             if (selectsLS[17] && cfg.docNgoaiKhoa) await selectOption(selectsLS[17], cfg.docNgoaiKhoa);
         }
 
-        // 2.3 DA LIỄU (textarea 9, selects 18, 19)
+        // 2.3 DA LIỄU
         if (!cfg.skipDaLieu) {
             if (textareasLS[9]) setAngularValue(textareasLS[9], texts.daLieu || defaultExamTexts.daLieu);
             if (selectsLS[18]) await selectOption(selectsLS[18], cfg.plChuyenKhoa || "Loại I: Rất khỏe");
             if (selectsLS[19] && cfg.docDaLieu) await selectOption(selectsLS[19], cfg.docDaLieu);
         }
 
-        // 2.4 SẢN PHỤ KHOA (textarea 10, selects 20, 21)
+        // 2.4 SẢN PHỤ KHOA
         if (!cfg.skipSanPhuKhoa) {
             if (textareasLS[10]) setAngularValue(textareasLS[10], texts.sanPhuKhoa || defaultExamTexts.sanPhuKhoa);
             if (selectsLS[20]) await selectOption(selectsLS[20], cfg.plChuyenKhoa || "Loại I: Rất khỏe");
             if (selectsLS[21] && cfg.docSanPhuKhoa) await selectOption(selectsLS[21], cfg.docSanPhuKhoa);
         }
 
-        // 2.5 MẮT (inputs thị lực, textarea 11, selects 22, 23)
+        // 2.5 MẮT
         if (!cfg.skipMat) {
             const inpKKPhai = paneLS.querySelector('input[name="khong_kinh_mat_phai"]') || paneLS.querySelectorAll('input[placeholder="Nhập giá trị từ 0 đến 10"]')[0];
             const inpKKTrai = paneLS.querySelector('input[name="khong_kinh_mat_trai"]') || paneLS.querySelectorAll('input[placeholder="Nhập giá trị từ 0 đến 10"]')[1];
@@ -371,7 +420,7 @@
             if (selectsLS[23] && cfg.docMat) await selectOption(selectsLS[23], cfg.docMat);
         }
 
-        // 2.6 TAI - MŨI - HỌNG (inputs thính lực, textarea 12, selects 24, 25)
+        // 2.6 TAI - MŨI - HỌNG
         if (!cfg.skipTmh) {
             const inputsTai = Array.from(paneLS.querySelectorAll('input[placeholder="m"]'));
             if (inputsTai[0]) setAngularValue(inputsTai[0], cfg.thinhLucPThuong || "5");
@@ -384,7 +433,7 @@
             if (selectsLS[25] && cfg.docTmh) await selectOption(selectsLS[25], cfg.docTmh);
         }
 
-        // 2.7 RĂNG - HÀM - MẶT (textareas 13..15, selects 26, 27)
+        // 2.7 RĂNG - HÀM - MẶT
         if (!cfg.skipRhm) {
             if (textareasLS[13]) setAngularValue(textareasLS[13], texts.rhmHamTren || defaultExamTexts.rhmHamTren);
             if (textareasLS[14]) setAngularValue(textareasLS[14], texts.rhmHamDuoi || defaultExamTexts.rhmHamDuoi);
@@ -398,7 +447,6 @@
         await clickSubTab('KẾT LUẬN');
         const paneKL = document.querySelector('.vertical-tabs .ant-tabs-tabpane-active') || document;
 
-        // 3.1 Phân loại chung
         const cbsKL = Array.from(paneKL.querySelectorAll('.ant-checkbox-wrapper'));
         const targetCb = cbsKL.find(c => c.innerText.includes(cfg.plKetLuan) || (cfg.plKetLuan.includes('Loại I:') && c.innerText.includes('Loại I:')) || (cfg.plKetLuan.includes('Loại II') && c.innerText.includes('Loại II')));
         if (targetCb && !targetCb.classList.contains('ant-checkbox-wrapper-checked')) {
@@ -411,26 +459,22 @@
             }
         });
 
-        // 3.2 Xác nhận kết thúc khám
         const cbKetThuc = cbsKL.find(c => c.innerText.includes('Xác nhận kết thúc khám') || c.closest('div')?.innerText?.includes('Xác nhận kết thúc khám')) || cbsKL[cbsKL.length - 1];
         if (cbKetThuc && !cbKetThuc.classList.contains('ant-checkbox-wrapper-checked')) {
             cbKetThuc.click();
         }
 
-        // 3.3 Bác sĩ kết luận
         const selectsKL = Array.from(paneKL.querySelectorAll('nz-select'));
         const docSelectKL = selectsKL[1] || selectsKL[selectsKL.length - 1];
         if (docSelectKL && cfg.docKetLuan) {
             await selectOption(docSelectKL, cfg.docKetLuan);
         }
 
-        // 3.4 Giờ kết thúc
         const timeInput = paneKL.querySelector('input[placeholder="__:__"]');
         if (timeInput) {
             setAngularValue(timeInput, cfg.gioKetThuc || '07:45');
         }
 
-        // 3.5 Bấm Lưu
         if (cfg.autoSave) {
             if (statusEl) statusEl.innerText = '⏳ Đang bấm Lưu (F11)...';
             await delay(350);
@@ -450,6 +494,13 @@
     // 4. QUY TRÌNH LIÊN HOÀN (TIẾP ĐÓN -> KHÁM -> LƯU)
     // ----------------------------------------------------
     async function runFullWorkflow(statusEl) {
+        const nameInput = document.querySelector('input[name="tenDayDu"]');
+        const expectedPatientName = nameInput ? nameInput.value.trim() : '';
+
+        if (!expectedPatientName) {
+            throw new Error('Chưa nhập Họ và tên người khám tại Tiếp đón!');
+        }
+
         if (statusEl) statusEl.innerText = '🚀 [1/4] Đang điền Tiếp đón bắt buộc...';
         await fillTiepDonConfig(statusEl);
         await delay(500);
@@ -458,7 +509,7 @@
         await saveTiepDon(statusEl);
 
         if (statusEl) statusEl.innerText = '🚀 [3/4] Đang chuyển sang Danh sách & mở Khám...';
-        await openPatientExamFromList(statusEl);
+        await openPatientExamFromList(statusEl, expectedPatientName);
 
         if (statusEl) statusEl.innerText = '🚀 [4/4] Đang điền Thể lực, Lâm sàng, Kết luận & Lưu...';
         await fillKhamTheoBangGiaoDien(statusEl);
@@ -468,8 +519,7 @@
 
     function readConfigFromUI() {
         return {
-            selectedLevel: document.getElementById('cfg-theluc-pl')?.value === 'Loại 1' ? '1' : '2',
-
+            selectedLevel: document.getElementById('cfg-theluc-pl')?.value === 'Loại 1' ? '1' : (document.getElementById('cfg-theluc-pl')?.value === 'Loại 2' ? '2' : 'other'),
             height: document.getElementById('cfg-height')?.value?.trim() || '150',
             weight: document.getElementById('cfg-weight')?.value?.trim() || '48',
             pulse: document.getElementById('cfg-pulse')?.value?.trim() || '80',
@@ -567,7 +617,7 @@
                 indicator.innerText = '🟢 Loại 1 (Rất khỏe / Tốt)';
                 indicator.style.color = '#389e0d';
             }
-        } else {
+        } else if (level === '2') {
             if (btn2) {
                 btn2.style.outline = '2px solid #1890ff';
                 btn2.style.background = '#e6f7ff';
@@ -582,38 +632,73 @@
                 indicator.innerText = '🔵 Loại 2 (Khỏe / Khá)';
                 indicator.style.color = '#096dd9';
             }
+        } else {
+            if (btn1) {
+                btn1.style.outline = 'none';
+                btn1.style.background = '#ffffff';
+                btn1.style.color = '#595959';
+            }
+            if (btn2) {
+                btn2.style.outline = 'none';
+                btn2.style.background = '#ffffff';
+                btn2.style.color = '#595959';
+            }
+            if (indicator) {
+                indicator.innerText = '⚪ Tùy chỉnh khác';
+                indicator.style.color = '#8c8c8c';
+            }
         }
     }
 
     let isRunning = false;
 
-    async function handleSmartRun() {
+    async function executeSafe(actionFn, btnEl, originalText) {
         if (isRunning) return;
         isRunning = true;
         const statusEl = document.getElementById('his-panel-status');
-        const runBtn = document.getElementById('his-panel-run-btn');
-        if (runBtn) {
-            runBtn.disabled = true;
-            runBtn.innerText = '⏳ Đang xử lý...';
+        if (btnEl) {
+            btnEl.disabled = true;
+            btnEl.innerText = '⏳ Đang xử lý...';
         }
 
         try {
+            await actionFn(statusEl);
+        } catch (e) {
+            console.error('Lỗi tự động hóa:', e);
+            if (statusEl) statusEl.innerText = '❌ ' + e.message;
+        } finally {
+            isRunning = false;
+            if (btnEl) {
+                btnEl.disabled = false;
+                btnEl.innerText = originalText;
+            }
+        }
+    }
+
+    async function handleSmartRun() {
+        const runBtn = document.getElementById('his-panel-run-btn');
+        await executeSafe(async (statusEl) => {
             const activeTopTab = document.querySelector('.tab-app-main .ant-tabs-tab-active')?.innerText || '';
             if (activeTopTab.includes('Tiếp đón')) {
                 await runFullWorkflow(statusEl);
             } else {
                 await fillKhamTheoBangGiaoDien(statusEl);
             }
-        } catch (e) {
-            console.error('Lỗi tự động hóa:', e);
-            if (statusEl) statusEl.innerText = '❌ Lỗi: ' + e.message;
-        } finally {
-            isRunning = false;
-            if (runBtn) {
-                runBtn.disabled = false;
-                runBtn.innerText = '🚀 ĐIỀN KHÁM THEO BẢNG & LƯU (F9)';
-            }
-        }
+        }, runBtn, '🚀 ĐIỀN KHÁM THEO BẢNG & LƯU (F9)');
+    }
+
+    async function handleFullFlowClick() {
+        const btnFullFlow = document.getElementById('btn-full-flow');
+        await executeSafe(async (statusEl) => {
+            await runFullWorkflow(statusEl);
+        }, btnFullFlow, '🔄 2. Tiếp Đón ➔ Khám ➔ Lưu');
+    }
+
+    async function handleTiepDonOnlyClick() {
+        const btnTdOnly = document.getElementById('btn-fill-td-only');
+        await executeSafe(async (statusEl) => {
+            await fillTiepDonConfig(statusEl);
+        }, btnTdOnly, '⚡ 1. Điền Tiếp Đón (*)');
     }
 
     // ----------------------------------------------------
@@ -924,23 +1009,21 @@
 
         updateQuickPlUI(cfg.selectedLevel || '1');
 
-        // Event: Quick Category Selection
         const btnPl1 = document.getElementById('btn-quick-pl1');
         if (btnPl1) btnPl1.onclick = () => applyCategoryLevel('1');
 
         const btnPl2 = document.getElementById('btn-quick-pl2');
         if (btnPl2) btnPl2.onclick = () => applyCategoryLevel('2');
 
-        // Event: Auto-save config when any input changes
         const inputs = panel.querySelectorAll('input, select');
         inputs.forEach(inp => {
             inp.addEventListener('change', () => {
                 const updated = readConfigFromUI();
                 saveConfig(updated);
+                updateQuickPlUI(updated.selectedLevel);
             });
         });
 
-        // Event: Reset Exam Texts
         const resetBtn = document.getElementById('btn-reset-exam-texts');
         if (resetBtn) {
             resetBtn.onclick = () => {
@@ -968,7 +1051,6 @@
             };
         }
 
-        // Toggle panel collapse
         let isCollapsed = false;
         const body = document.getElementById('his-panel-body');
         const toggleBtn = document.getElementById('his-panel-toggle-btn');
@@ -988,28 +1070,30 @@
             };
         }
 
-        const statusEl = document.getElementById('his-panel-status');
-
         const btnTdOnly = document.getElementById('btn-fill-td-only');
-        if (btnTdOnly) btnTdOnly.onclick = () => fillTiepDonConfig(statusEl);
+        if (btnTdOnly) btnTdOnly.onclick = handleTiepDonOnlyClick;
 
         const btnFullFlow = document.getElementById('btn-full-flow');
-        if (btnFullFlow) btnFullFlow.onclick = () => runFullWorkflow(statusEl);
+        if (btnFullFlow) btnFullFlow.onclick = handleFullFlowClick;
 
         const runBtn = document.getElementById('his-panel-run-btn');
         if (runBtn) runBtn.onclick = handleSmartRun;
     }
 
-    window.addEventListener('keydown', (e) => {
+    // Quản lý event listener keydown sạch, tránh đăng ký trùng lặp
+    if (window._hisKeydownHandler) {
+        window.removeEventListener('keydown', window._hisKeydownHandler);
+    }
+    window._hisKeydownHandler = (e) => {
         if (e.key === 'F9') {
             e.preventDefault();
             handleSmartRun();
         } else if (e.key === 'F10') {
             e.preventDefault();
-            const statusEl = document.getElementById('his-panel-status');
-            runFullWorkflow(statusEl);
+            handleFullFlowClick();
         }
-    });
+    };
+    window.addEventListener('keydown', window._hisKeydownHandler);
 
     mountControlPanel();
     if (window._hisAutoRemountTimer) clearInterval(window._hisAutoRemountTimer);
