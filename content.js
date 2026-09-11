@@ -97,12 +97,12 @@
             if (textareasLS[i]) setAngularValue(textareasLS[i], defaultTexts[i]);
         }
 
-        // 1.2 Điền thị lực Mắt: 6 7 6 7
+        // 1.2 Điền thị lực Mắt: Không kính P = 6, Không kính T = 7 (Có kính không nhập)
         const inputsMat = Array.from(paneLS.querySelectorAll('input[placeholder="Nhập giá trị từ 0 đến 10"]'));
         if (inputsMat[0]) setAngularValue(inputsMat[0], "6");
         if (inputsMat[1]) setAngularValue(inputsMat[1], "7");
-        if (inputsMat[2]) setAngularValue(inputsMat[2], "6");
-        if (inputsMat[3]) setAngularValue(inputsMat[3], "7");
+        if (inputsMat[2]) setAngularValue(inputsMat[2], "");
+        if (inputsMat[3]) setAngularValue(inputsMat[3], "");
 
         // 1.3 Điền thính lực Tai Mũi Họng (5m / 0.5m)
         const inputsTai = Array.from(paneLS.querySelectorAll('input[placeholder="m"]'));
@@ -242,7 +242,7 @@
                     • Phân loại: <b>Loại II: Khỏe</b><br>
                     • Ngoại khoa & Da liễu: <b>BS 06 (Mai Ngọc Tuấn)</b><br>
                     • Sản phụ khoa: <b>BỎ TRỐNG (Không điền)</b><br>
-                    • Mắt: <b>6 - 7 - 6 - 7</b> | Bác sĩ: <b>BS 24 (Nguyễn Thị Dung)</b><br>
+                    • Mắt: <b>Không kính: 6 - 7 (Có kính: không nhập)</b> | Bác sĩ: <b>BS 24 (Nguyễn Thị Dung)</b><br>
                     • Tai Mũi Họng: <b>BS 24</b> | Răng Hàm Mặt: <b>BS 24</b><br>
                     • Bác sĩ kết luận: <b>BS 02 (Nguyễn Thị Nga)</b>
                 </div>
