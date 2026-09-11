@@ -97,12 +97,16 @@
             if (textareasLS[i]) setAngularValue(textareasLS[i], defaultTexts[i]);
         }
 
-        // 1.2 Điền thị lực Mắt: Không kính P = 6, Không kính T = 7 (Có kính không nhập)
-        const inputsMat = Array.from(paneLS.querySelectorAll('input[placeholder="Nhập giá trị từ 0 đến 10"]'));
-        if (inputsMat[0]) setAngularValue(inputsMat[0], "6");
-        if (inputsMat[1]) setAngularValue(inputsMat[1], "7");
-        if (inputsMat[2]) setAngularValue(inputsMat[2], "");
-        if (inputsMat[3]) setAngularValue(inputsMat[3], "");
+        // 1.2 Điền thị lực Mắt CHÍNH XÁC theo name: Không kính P = 6, Không kính T = 7, Có kính BỎ TRỐNG
+        const inpKKPhai = paneLS.querySelector('input[name="khong_kinh_mat_phai"]') || paneLS.querySelectorAll('input[placeholder="Nhập giá trị từ 0 đến 10"]')[0];
+        const inpKKTrai = paneLS.querySelector('input[name="khong_kinh_mat_trai"]') || paneLS.querySelectorAll('input[placeholder="Nhập giá trị từ 0 đến 10"]')[1];
+        const inpCKPhai = paneLS.querySelector('input[name="co_kinh_mat_phai"]') || paneLS.querySelectorAll('input[placeholder="Nhập giá trị từ 0 đến 10"]')[2];
+        const inpCKTrai = paneLS.querySelector('input[name="co_kinh_mat_trai"]') || paneLS.querySelectorAll('input[placeholder="Nhập giá trị từ 0 đến 10"]')[3];
+
+        if (inpKKPhai) setAngularValue(inpKKPhai, "6");
+        if (inpKKTrai) setAngularValue(inpKKTrai, "7");
+        if (inpCKPhai) setAngularValue(inpCKPhai, "");
+        if (inpCKTrai) setAngularValue(inpCKTrai, "");
 
         // 1.3 Điền thính lực Tai Mũi Họng (5m / 0.5m)
         const inputsTai = Array.from(paneLS.querySelectorAll('input[placeholder="m"]'));
