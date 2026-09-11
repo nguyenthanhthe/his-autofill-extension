@@ -123,4 +123,11 @@ Khi có bản cập nhật mới:
 1. Bác sĩ chỉ cần tải lại bản mới về máy và giải nén đè lên thư mục cũ.
 2. Vào `chrome://extensions`, bấm nút **Tải lại (biểu tượng xoay tròn)** tại tiện ích là hoàn tất.
 
+---
+
+## 7. TUYÊN BỐ MIỄN TRỪ TRÁCH NHIỆM & GIẤY PHÉP
+
+- **Miễn trừ trách nhiệm chuyên môn y khoa:** Tiện ích này thuần túy là công cụ hỗ trợ nhập liệu tự động (data-entry assistant), không phải thiết bị y tế và không có chức năng chẩn đoán hay chỉ định y khoa. Y Bác sĩ chịu hoàn toàn trách nhiệm chuyên môn đối với kết quả khám, phân loại sức khỏe và kết luận bệnh án trước khi bấm Lưu hoặc Ký số. Tác giả không chịu trách nhiệm đối với bất kỳ sai sót y khoa hay gián đoạn hệ thống nào.
+- **Giấy phép (License):** Phát hành tự do và miễn phí theo giấy phép mã nguồn mở [MIT License](LICENSE).
+
 *Chúc Quý Y Bác sĩ và Cán bộ Y tế hoàn thành công việc nhanh chóng, chính xác và giảm bớt áp lực thủ tục giấy tờ!*

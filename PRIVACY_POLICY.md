@@ -31,6 +31,18 @@ Chúng tôi tuân thủ nghiêm ngặt các quy định về an toàn thông tin
 
 ---
 
-## 5. Liên hệ
-Nếu Quý Bác sĩ hoặc Cơ quan Y tế có bất kỳ câu hỏi nào liên quan đến Chính sách Quyền riêng tư này, vui lòng gửi phản hồi qua trang kho lưu trữ chính thức:  
+## 5. Tuyên Bố Miễn Trừ Trách Nhiệm (Disclaimer & Limitation of Liability)
+- **Bản chất công cụ:** Tiện ích này thuần túy là một công cụ hỗ trợ nhập liệu tự động (data-entry assistant) trên giao diện trình duyệt của người dùng. Tiện ích **KHÔNG PHẢI** là thiết bị y tế, **KHÔNG CÓ TÍNH NĂNG** chẩn đoán y khoa, không thay thế cho chuyên môn, kinh nghiệm và quyết định lâm sàng của Y Bác sĩ.
+- **Trách nhiệm chuyên môn:** Toàn bộ thông tin, chỉ số khám, phân loại sức khỏe và kết luận chuyên khoa sau khi được tiện ích điền vào biểu mẫu đều phải được **Y Bác sĩ trực tiếp thăm khám kiểm tra, xác nhận và chịu hoàn toàn trách nhiệm chuyên môn** trước khi thực hiện bấm Lưu hoặc Ký số hồ sơ bệnh án.
+- **Miễn trừ trách nhiệm pháp lý cá nhân:** Trong mọi trường hợp, tác giả và nhóm phát triển tiện ích hoàn toàn **không chịu bất kỳ trách nhiệm pháp lý, trách nhiệm y khoa hay nghĩa vụ bồi thường** nào đối với các sai sót trong hồ sơ bệnh án, sự cố gián đoạn dữ liệu, lỗi đường truyền của hệ thống HIS cơ sở, hoặc bất kỳ thiệt hại trực tiếp/gián tiếp nào phát sinh từ việc cài đặt và sử dụng tiện ích này.
+
+---
+
+## 6. Giấy phép sử dụng (License)
+Tiện ích được phát hành theo Giấy phép Mã nguồn mở **MIT License**. Bác sĩ và các cơ sở y tế được tự do sử dụng hoàn toàn miễn phí cho mục đích hỗ trợ công việc.
+
+---
+
+## 7. Liên hệ
+Nếu Quý Bác sĩ hoặc Cơ quan Y tế có bất kỳ câu hỏi nào liên quan đến Chính sách Quyền riêng tư hoặc Điều khoản Miễn trừ trách nhiệm này, vui lòng gửi phản hồi qua trang kho lưu trữ chính thức:  
 [https://github.com/nguyenthanhthe/his-autofill-extension](https://github.com/nguyenthanhthe/his-autofill-extension)
