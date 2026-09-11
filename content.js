@@ -1,17 +1,22 @@
-// ==UserScript==
-// @name         HIS V2 - Bảng Điều Khiển Khám Sức Khỏe & Tiếp Đón Đa Chuyên Khoa
-// @namespace    http://tampermonkey.net/
-// @version      7.1
-// @description  Bảng giao diện tùy biến hoàn toàn cho bác sĩ: Bộ chọn nhanh Loại 1 / Loại 2, Tùy biến 16 nội dung khám lâm sàng, Thể lực, 7 Chuyên khoa Lâm sàng, Quy trình liên hoàn Tiếp đón -> Khám -> Tự Lưu không hardcode thông tin
-// @author       ThanhThe
-// @match        https://v20.ytecoso.vn/*
-// @grant        none
-// ==/UserScript==
+/**
+ * HIS V2 - Tiện Ích Hỗ Trợ Khám Sức Khỏe & Tiếp Đón Đa Chuyên Khoa
+ * Dành cho cán bộ y tế tại v20.ytecoso.vn
+ */
 
 (function () {
     'use strict';
 
     const CONFIG_KEY = 'his_v2_autofill_config_v7';
+
+    function escapeHtml(str) {
+        if (str === null || str === undefined) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
 
     const defaultExamTexts = {
         tuanHoan: "T1T2 đều rõ không có tiếng bệnh lý",
@@ -96,9 +101,20 @@
     function saveConfig(cfg) {
         try {
             localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg));
+            if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+                chrome.storage.local.set({ [CONFIG_KEY]: cfg }).catch(() => {});
+            }
         } catch (e) {
             console.warn('Lỗi lưu config:', e);
         }
+    }
+
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.get([CONFIG_KEY], (res) => {
+            if (res && res[CONFIG_KEY] && !localStorage.getItem(CONFIG_KEY)) {
+                localStorage.setItem(CONFIG_KEY, JSON.stringify(res[CONFIG_KEY]));
+            }
+        });
     }
 
     const delay = ms => new Promise(r => setTimeout(r, ms));
@@ -149,7 +165,6 @@
         }
 
         const cleanMatch = textMatch.trim().toLowerCase();
-        // Regex word boundary: e.g. "04" or "4" matches word 04, not 24 or 40
         const wordRegex = new RegExp(`(^|\\s|\\|)${cleanMatch}(\\s|\\||$)`, 'i');
 
         for (let i = 0; i < 25; i++) {
@@ -157,15 +172,10 @@
             const options = Array.from(document.querySelectorAll('.ant-select-item-option'));
             if (!options.length) continue;
 
-            // 1. Ưu tiên khớp chính xác theo ranh giới từ (mã bác sĩ: 04, 02, 06...)
             let match = options.find(o => wordRegex.test(o.innerText));
-
-            // 2. Ưu tiên khớp tiền tố
             if (!match) {
                 match = options.find(o => o.innerText.trim().toLowerCase().startsWith(cleanMatch));
             }
-
-            // 3. Fallback khớp chứa chuỗi
             if (!match) {
                 match = options.find(o => o.innerText.toLowerCase().includes(cleanMatch));
             }
@@ -231,7 +241,6 @@
 
         saveBtn.click();
 
-        // Chờ nút lưu hết trạng thái loading
         for (let i = 0; i < 20; i++) {
             await delay(150);
             if (!saveBtn.classList.contains('ant-btn-loading')) break;
@@ -268,7 +277,6 @@
             await delay(600);
         }
 
-        // Chờ bảng dữ liệu tải xong (không còn ant-spin-spinning)
         for (let i = 0; i < 20; i++) {
             if (!pane.querySelector('.ant-spin-spinning')) break;
             await delay(150);
@@ -276,10 +284,8 @@
 
         if (statusEl) statusEl.innerText = '⏳ Đang mở hồ sơ khám bệnh nhân hàng đầu...';
 
-        // Sử dụng :not([nz-table-measure-row]) để bỏ qua hàng đo kích thước ảo của Ng-Zorro
         let firstDataRow = pane.querySelector('tbody tr:not([nz-table-measure-row])');
 
-        // Nếu có tên dự kiến, kiểm tra xem hàng đầu đã cập nhật bệnh nhân mới chưa
         if (expectedPatientName && firstDataRow) {
             for (let retry = 0; retry < 3; retry++) {
                 if (firstDataRow.innerText.includes(expectedPatientName)) break;
@@ -756,19 +762,19 @@
                     <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-top: 5px;">
                         <div>
                             <label style="font-size: 10px; color: #595959;">Cao (cm):</label>
-                            <input id="cfg-height" type="text" value="${cfg.height}" style="width: 100%; padding: 4px; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; text-align: center; color: #531dab;">
+                            <input id="cfg-height" type="text" value="${escapeHtml(cfg.height)}" style="width: 100%; padding: 4px; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; text-align: center; color: #531dab;">
                         </div>
                         <div>
                             <label style="font-size: 10px; color: #595959;">Nặng (kg):</label>
-                            <input id="cfg-weight" type="text" value="${cfg.weight}" style="width: 100%; padding: 4px; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; text-align: center; color: #531dab;">
+                            <input id="cfg-weight" type="text" value="${escapeHtml(cfg.weight)}" style="width: 100%; padding: 4px; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; text-align: center; color: #531dab;">
                         </div>
                         <div>
                             <label style="font-size: 10px; color: #595959;">Mạch (l/p):</label>
-                            <input id="cfg-pulse" type="text" value="${cfg.pulse}" style="width: 100%; padding: 4px; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; text-align: center; color: #cf1322;">
+                            <input id="cfg-pulse" type="text" value="${escapeHtml(cfg.pulse)}" style="width: 100%; padding: 4px; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; text-align: center; color: #cf1322;">
                         </div>
                         <div>
                             <label style="font-size: 10px; color: #595959;">Huyết áp:</label>
-                            <input id="cfg-bp" type="text" value="${cfg.bp}" style="width: 100%; padding: 4px; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; text-align: center; color: #cf1322;">
+                            <input id="cfg-bp" type="text" value="${escapeHtml(cfg.bp)}" style="width: 100%; padding: 4px; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; text-align: center; color: #cf1322;">
                         </div>
                     </div>
                     <div style="margin-top: 5px; display: flex; align-items: center; justify-content: space-between;">
@@ -806,7 +812,7 @@
                         <tr>
                             <td style="padding: 3px 4px; border: 1px solid #f0f0f0;"><b>1. Nội khoa</b> (8 khoa)</td>
                             <td style="padding: 3px 4px; border: 1px solid #f0f0f0; text-align: center;">
-                                <input id="cfg-doc-noi" type="text" value="${cfg.docNoiKhoa}" placeholder="Mã BS" style="width: 65px; padding: 2px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;">
+                                <input id="cfg-doc-noi" type="text" value="${escapeHtml(cfg.docNoiKhoa)}" placeholder="Mã BS" style="width: 65px; padding: 2px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;">
                             </td>
                             <td style="padding: 3px 4px; border: 1px solid #f0f0f0; text-align: center;">
                                 <input id="cfg-skip-noi" type="checkbox" ${cfg.skipNoiKhoa ? 'checked' : ''}>
@@ -816,7 +822,7 @@
                         <tr style="background: #fafafa;">
                             <td style="padding: 3px 4px; border: 1px solid #f0f0f0;"><b>2. Ngoại khoa</b></td>
                             <td style="padding: 3px 4px; border: 1px solid #f0f0f0; text-align: center;">
-                                <input id="cfg-doc-ngoai" type="text" value="${cfg.docNgoaiKhoa}" placeholder="Mã BS" style="width: 65px; padding: 2px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;">
+                                <input id="cfg-doc-ngoai" type="text" value="${escapeHtml(cfg.docNgoaiKhoa)}" placeholder="Mã BS" style="width: 65px; padding: 2px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;">
                             </td>
                             <td style="padding: 3px 4px; border: 1px solid #f0f0f0; text-align: center;">
                                 <input id="cfg-skip-ngoai" type="checkbox" ${cfg.skipNgoaiKhoa ? 'checked' : ''}>
@@ -826,7 +832,7 @@
                         <tr>
                             <td style="padding: 3px 4px; border: 1px solid #f0f0f0;"><b>3. Da liễu</b></td>
                             <td style="padding: 3px 4px; border: 1px solid #f0f0f0; text-align: center;">
-                                <input id="cfg-doc-dalieu" type="text" value="${cfg.docDaLieu}" placeholder="Mã BS" style="width: 65px; padding: 2px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;">
+                                <input id="cfg-doc-dalieu" type="text" value="${escapeHtml(cfg.docDaLieu)}" placeholder="Mã BS" style="width: 65px; padding: 2px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;">
                             </td>
                             <td style="padding: 3px 4px; border: 1px solid #f0f0f0; text-align: center;">
                                 <input id="cfg-skip-dalieu" type="checkbox" ${cfg.skipDaLieu ? 'checked' : ''}>
@@ -836,7 +842,7 @@
                         <tr style="background: #fff1f0;">
                             <td style="padding: 3px 4px; border: 1px solid #f0f0f0; color: #cf1322;"><b>4. Sản phụ khoa</b></td>
                             <td style="padding: 3px 4px; border: 1px solid #f0f0f0; text-align: center;">
-                                <input id="cfg-doc-san" type="text" value="${cfg.docSanPhuKhoa}" placeholder="Trống" style="width: 65px; padding: 2px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px;">
+                                <input id="cfg-doc-san" type="text" value="${escapeHtml(cfg.docSanPhuKhoa)}" placeholder="Trống" style="width: 65px; padding: 2px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px;">
                             </td>
                             <td style="padding: 3px 4px; border: 1px solid #f0f0f0; text-align: center;">
                                 <input id="cfg-skip-san" type="checkbox" ${cfg.skipSanPhuKhoa ? 'checked' : ''} title="Bỏ qua không điền">
@@ -846,10 +852,10 @@
                         <tr>
                             <td style="padding: 3px 4px; border: 1px solid #f0f0f0;">
                                 <b>5. Mắt</b><br>
-                                <span style="font-size: 9px; color: #666;">K.kính: P <input id="cfg-mat-phai" type="text" value="${cfg.matPhai}" style="width: 24px; text-align: center; padding: 1px;"> T <input id="cfg-mat-trai" type="text" value="${cfg.matTrai}" style="width: 24px; text-align: center; padding: 1px;"></span>
+                                <span style="font-size: 9px; color: #666;">K.kính: P <input id="cfg-mat-phai" type="text" value="${escapeHtml(cfg.matPhai)}" style="width: 24px; text-align: center; padding: 1px;"> T <input id="cfg-mat-trai" type="text" value="${escapeHtml(cfg.matTrai)}" style="width: 24px; text-align: center; padding: 1px;"></span>
                             </td>
                             <td style="padding: 3px 4px; border: 1px solid #f0f0f0; text-align: center;">
-                                <input id="cfg-doc-mat" type="text" value="${cfg.docMat}" placeholder="Mã BS" style="width: 65px; padding: 2px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;">
+                                <input id="cfg-doc-mat" type="text" value="${escapeHtml(cfg.docMat)}" placeholder="Mã BS" style="width: 65px; padding: 2px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;">
                             </td>
                             <td style="padding: 3px 4px; border: 1px solid #f0f0f0; text-align: center;">
                                 <input id="cfg-skip-mat" type="checkbox" ${cfg.skipMat ? 'checked' : ''}>
@@ -862,7 +868,7 @@
                                 <span style="font-size: 9px; color: #666;">Thính lực: P 5/0.5 | T 5/0.5</span>
                             </td>
                             <td style="padding: 3px 4px; border: 1px solid #f0f0f0; text-align: center;">
-                                <input id="cfg-doc-tmh" type="text" value="${cfg.docTmh}" placeholder="Mã BS" style="width: 65px; padding: 2px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;">
+                                <input id="cfg-doc-tmh" type="text" value="${escapeHtml(cfg.docTmh)}" placeholder="Mã BS" style="width: 65px; padding: 2px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;">
                             </td>
                             <td style="padding: 3px 4px; border: 1px solid #f0f0f0; text-align: center;">
                                 <input id="cfg-skip-tmh" type="checkbox" ${cfg.skipTmh ? 'checked' : ''}>
@@ -872,7 +878,7 @@
                         <tr>
                             <td style="padding: 3px 4px; border: 1px solid #f0f0f0;"><b>7. Răng - Hàm - Mặt</b></td>
                             <td style="padding: 3px 4px; border: 1px solid #f0f0f0; text-align: center;">
-                                <input id="cfg-doc-rhm" type="text" value="${cfg.docRhm}" placeholder="Mã BS" style="width: 65px; padding: 2px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;">
+                                <input id="cfg-doc-rhm" type="text" value="${escapeHtml(cfg.docRhm)}" placeholder="Mã BS" style="width: 65px; padding: 2px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;">
                             </td>
                             <td style="padding: 3px 4px; border: 1px solid #f0f0f0; text-align: center;">
                                 <input id="cfg-skip-rhm" type="checkbox" ${cfg.skipRhm ? 'checked' : ''}>
@@ -888,67 +894,67 @@
                         <div style="margin-top: 6px; max-height: 200px; overflow-y: auto; font-size: 10px; display: flex; flex-direction: column; gap: 4px;">
                             <div>
                                 <span style="color: #595959;">Tuần hoàn:</span>
-                                <input id="cfg-txt-tuanhoan" type="text" value="${texts.tuanHoan}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                                <input id="cfg-txt-tuanhoan" type="text" value="${escapeHtml(texts.tuanHoan)}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
                             </div>
                             <div>
                                 <span style="color: #595959;">Hô hấp:</span>
-                                <input id="cfg-txt-hohap" type="text" value="${texts.hoHap}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                                <input id="cfg-txt-hohap" type="text" value="${escapeHtml(texts.hoHap)}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
                             </div>
                             <div>
                                 <span style="color: #595959;">Tiêu hóa:</span>
-                                <input id="cfg-txt-tieuhoa" type="text" value="${texts.tieuHoa}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                                <input id="cfg-txt-tieuhoa" type="text" value="${escapeHtml(texts.tieuHoa)}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
                             </div>
                             <div>
                                 <span style="color: #595959;">Thận - Tiết niệu:</span>
-                                <input id="cfg-txt-thantn" type="text" value="${texts.thanTietNieu}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                                <input id="cfg-txt-thantn" type="text" value="${escapeHtml(texts.thanTietNieu)}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
                             </div>
                             <div>
                                 <span style="color: #595959;">Nội tiết:</span>
-                                <input id="cfg-txt-noitiet" type="text" value="${texts.noiTiet}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                                <input id="cfg-txt-noitiet" type="text" value="${escapeHtml(texts.noiTiet)}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
                             </div>
                             <div>
                                 <span style="color: #595959;">Cơ - Xương - Khớp:</span>
-                                <input id="cfg-txt-coxuongkhop" type="text" value="${texts.coXuongKhop}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                                <input id="cfg-txt-coxuongkhop" type="text" value="${escapeHtml(texts.coXuongKhop)}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
                             </div>
                             <div>
                                 <span style="color: #595959;">Thần kinh:</span>
-                                <input id="cfg-txt-thankinh" type="text" value="${texts.thanKinh}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                                <input id="cfg-txt-thankinh" type="text" value="${escapeHtml(texts.thanKinh)}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
                             </div>
                             <div>
                                 <span style="color: #595959;">Tâm thần:</span>
-                                <input id="cfg-txt-tamthan" type="text" value="${texts.tamThan}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                                <input id="cfg-txt-tamthan" type="text" value="${escapeHtml(texts.tamThan)}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
                             </div>
                             <div>
                                 <span style="color: #595959;">Ngoại khoa:</span>
-                                <input id="cfg-txt-ngoaikhoa" type="text" value="${texts.ngoaiKhoa}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                                <input id="cfg-txt-ngoaikhoa" type="text" value="${escapeHtml(texts.ngoaiKhoa)}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
                             </div>
                             <div>
                                 <span style="color: #595959;">Da liễu:</span>
-                                <input id="cfg-txt-dalieu" type="text" value="${texts.daLieu}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                                <input id="cfg-txt-dalieu" type="text" value="${escapeHtml(texts.daLieu)}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
                             </div>
                             <div>
                                 <span style="color: #595959;">Sản phụ khoa:</span>
-                                <input id="cfg-txt-sanphukhoa" type="text" value="${texts.sanPhuKhoa}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                                <input id="cfg-txt-sanphukhoa" type="text" value="${escapeHtml(texts.sanPhuKhoa)}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
                             </div>
                             <div>
                                 <span style="color: #595959;">Mắt (Bệnh khác):</span>
-                                <input id="cfg-txt-matkhac" type="text" value="${texts.matKhac}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                                <input id="cfg-txt-matkhac" type="text" value="${escapeHtml(texts.matKhac)}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
                             </div>
                             <div>
                                 <span style="color: #595959;">Tai Mũi Họng (Bệnh khác):</span>
-                                <input id="cfg-txt-tmhkhac" type="text" value="${texts.tmhKhac}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                                <input id="cfg-txt-tmhkhac" type="text" value="${escapeHtml(texts.tmhKhac)}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
                             </div>
                             <div>
                                 <span style="color: #595959;">RHM - Hàm trên:</span>
-                                <input id="cfg-txt-rhmhamtren" type="text" value="${texts.rhmHamTren}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                                <input id="cfg-txt-rhmhamtren" type="text" value="${escapeHtml(texts.rhmHamTren)}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
                             </div>
                             <div>
                                 <span style="color: #595959;">RHM - Hàm dưới:</span>
-                                <input id="cfg-txt-rhmhamduoi" type="text" value="${texts.rhmHamDuoi}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                                <input id="cfg-txt-rhmhamduoi" type="text" value="${escapeHtml(texts.rhmHamDuoi)}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
                             </div>
                             <div>
                                 <span style="color: #595959;">Răng Hàm Mặt (Bệnh khác):</span>
-                                <input id="cfg-txt-rhmkhac" type="text" value="${texts.rhmKhac}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                                <input id="cfg-txt-rhmkhac" type="text" value="${escapeHtml(texts.rhmKhac)}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
                             </div>
                             <div style="display: flex; justify-content: flex-end; margin-top: 4px;">
                                 <button id="btn-reset-exam-texts" type="button" style="font-size: 10px; padding: 2px 8px; background: #fafafa; border: 1px solid #d9d9d9; border-radius: 4px; cursor: pointer;">🔄 Khôi phục chuẩn</button>
@@ -973,11 +979,11 @@
                         </div>
                         <div>
                             <label style="font-size: 10px; color: #595959;">BS Kết luận:</label>
-                            <input id="cfg-doc-ketluan" type="text" value="${cfg.docKetLuan}" placeholder="Mã BS" style="width: 100%; padding: 4px; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; font-size: 11px; text-align: center;">
+                            <input id="cfg-doc-ketluan" type="text" value="${escapeHtml(cfg.docKetLuan)}" placeholder="Mã BS" style="width: 100%; padding: 4px; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; font-size: 11px; text-align: center;">
                         </div>
                         <div>
                             <label style="font-size: 10px; color: #595959;">Giờ kết thúc:</label>
-                            <input id="cfg-gio-kt" type="text" value="${cfg.gioKetThuc}" style="width: 100%; padding: 4px; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; font-size: 11px; text-align: center;">
+                            <input id="cfg-gio-kt" type="text" value="${escapeHtml(cfg.gioKetThuc)}" style="width: 100%; padding: 4px; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; font-size: 11px; text-align: center;">
                         </div>
                     </div>
                     <div style="margin-top: 5px;">
@@ -1080,7 +1086,6 @@
         if (runBtn) runBtn.onclick = handleSmartRun;
     }
 
-    // Quản lý event listener keydown sạch, tránh đăng ký trùng lặp
     if (window._hisKeydownHandler) {
         window.removeEventListener('keydown', window._hisKeydownHandler);
     }
