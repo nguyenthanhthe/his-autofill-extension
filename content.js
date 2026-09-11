@@ -511,7 +511,10 @@
         const expectedPatientName = nameInput ? nameInput.value.trim() : '';
 
         if (!expectedPatientName) {
-            throw new Error('Chưa nhập Họ và tên người khám tại màn hình Tiếp đón!');
+            if (statusEl) {
+                statusEl.innerText = '⚠️ Vui lòng nhập Họ tên (hoặc quét CCCD) tại Tiếp đón trước khi bấm liên hoàn!';
+            }
+            return;
         }
 
         if (statusEl) statusEl.innerText = '🚀 [1/3] Đang điền Tiếp đón bắt buộc...';
@@ -693,14 +696,13 @@
         const runBtn = document.getElementById('his-panel-run-btn');
         await executeSafe(async (statusEl) => {
             const activeTopTab = document.querySelector('.tab-app-main .ant-tabs-tab-active')?.innerText || '';
-            if (activeTopTab.includes('Tiếp đón')) {
-                await runFullWorkflow(statusEl);
-            } else {
-                if (!activeTopTab.includes('Khám sức khỏe')) {
-                    await clickMainTab('Khám sức khỏe định kỳ') || await clickMainTab('Khám sức khỏe');
+            if (!activeTopTab.includes('Khám sức khỏe')) {
+                const switched = await clickMainTab('Khám sức khỏe định kỳ') || await clickMainTab('Khám sức khỏe');
+                if (!switched) {
+                    throw new Error('Chưa mở tab Khám sức khỏe định kỳ trên thanh tab!');
                 }
-                await fillKhamTheoBangGiaoDien(statusEl);
             }
+            await fillKhamTheoBangGiaoDien(statusEl);
         }, runBtn, '🚀 ĐIỀN KHÁM SỨC KHỎE & LƯU (F6)');
     }
 
