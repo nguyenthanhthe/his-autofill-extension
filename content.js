@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         HIS V2 - Bảng Điều Khiển Khám Sức Khỏe & Tiếp Đón Đa Chuyên Khoa
 // @namespace    http://tampermonkey.net/
-// @version      6.0
-// @description  Bảng giao diện tùy biến hoàn toàn cho bác sĩ: Thể lực (Cao, Nặng, Mạch, HA), 7 Chuyên khoa Lâm sàng (Nội, Ngoại, Da liễu, Sản phụ khoa, Mắt, TMH, RHM), Kết luận & Tự động lưu không hardcode thông tin
+// @version      7.0
+// @description  Bảng giao diện tùy biến hoàn toàn cho bác sĩ: Bộ chọn nhanh Loại 1 / Loại 2, Tùy biến 16 nội dung khám lâm sàng, Thể lực, 7 Chuyên khoa Lâm sàng, Quy trình liên hoàn Tiếp đón -> Khám -> Tự Lưu không hardcode thông tin
 // @author       ThanhThe
 // @match        https://v20.ytecoso.vn/*
 // @grant        none
@@ -11,15 +11,37 @@
 (function () {
     'use strict';
 
-    const CONFIG_KEY = 'his_v2_autofill_config_v6';
+    const CONFIG_KEY = 'his_v2_autofill_config_v7';
+
+    const defaultExamTexts = {
+        tuanHoan: "T1T2 đều rõ không có tiếng bệnh lý",
+        hoHap: "Lồng ngực cân đối di động đều theo nhịp thở,phổi không có ral",
+        tieuHoa: "Bụng mềm không chướng,gan lách không to",
+        thanTietNieu: "Hiện tại bình thường",
+        noiTiet: "Hiện tại bình thường",
+        coXuongKhop: "Hiện tại bình thường",
+        thanKinh: "Không có dấu hiệu liệt thần kinh khu trú",
+        tamThan: "Không có dấu hiệu tâm thần kinh",
+        ngoaiKhoa: "Hiện tại bình thường",
+        daLieu: "Hiện tại bình thường",
+        sanPhuKhoa: "Hiện tại bình thường",
+        matKhac: "Hiện tại bình thường",
+        tmhKhac: "Hiện tại bình thường",
+        rhmHamTren: "Bình thường",
+        rhmHamDuoi: "Bình thường",
+        rhmKhac: "Hiện tại bình thường"
+    };
 
     const defaultCfg = {
+        // Phân loại tổng thể: '1' (Loại 1 / Loại I: Rất khỏe) hoặc '2' (Loại 2 / Loại II: Khỏe)
+        selectedLevel: '1',
+
         // Thể lực
         height: '150',
         weight: '48',
         pulse: '80',
         bp: '100/60',
-        theLucRadio: 'Loại 2',
+        theLucRadio: 'Loại 1',
 
         // 7 Chuyên khoa lâm sàng (Mã bác sĩ & Trạng thái bỏ qua)
         docNoiKhoa: '04',
@@ -51,22 +73,30 @@
         docRhm: '24',
         skipRhm: false,
 
-        // Phân loại chung & Kết luận
-        plChuyenKhoa: 'Loại II: Khỏe',
-        plKetLuan: 'Loại II: Khỏe',
+        // Phân loại chuyên khoa & Kết luận
+        plChuyenKhoa: 'Loại I: Rất khỏe',
+        plKetLuan: 'Loại I: Rất khỏe',
         docKetLuan: '02',
         gioKetThuc: '07:45',
-        autoSave: true
+        autoSave: true,
+
+        // 16 Nội dung khám lâm sàng có thể tùy chỉnh
+        examTexts: Object.assign({}, defaultExamTexts)
     };
 
     function loadConfig() {
         try {
             const saved = localStorage.getItem(CONFIG_KEY);
-            if (saved) return Object.assign({}, defaultCfg, JSON.parse(saved));
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                return Object.assign({}, defaultCfg, parsed, {
+                    examTexts: Object.assign({}, defaultExamTexts, parsed.examTexts || {})
+                });
+            }
         } catch (e) {
             console.warn('Lỗi đọc config:', e);
         }
-        return Object.assign({}, defaultCfg);
+        return JSON.parse(JSON.stringify(defaultCfg));
     }
 
     function saveConfig(cfg) {
@@ -163,11 +193,83 @@
         const taLyDo = pane.querySelector('textarea[name="lyDoVaoVien"]') || pane.querySelector('textarea');
         if (taLyDo) setAngularValue(taLyDo, "Khám sức khoẻ định kỳ");
 
-        if (statusEl) statusEl.innerText = '✅ Đã điền xong Tiếp đón (Nghề nghiệp, Mẫu KSK, Đối tượng, Kinh phí, Lý do)!';
+        if (statusEl) statusEl.innerText = '✅ Đã điền xong các mục Tiếp đón (*) bắt buộc!';
+    }
+
+    async function saveTiepDon(statusEl) {
+        if (statusEl) statusEl.innerText = '⏳ Đang bấm Lưu Tiếp đón (F11)...';
+        const nameInput = document.querySelector('input[name="tenDayDu"]');
+        const pane = nameInput ? nameInput.closest('.ant-tabs-tabpane') : (document.querySelector('.tab-app-main > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane-active') || document);
+
+        const buttons = Array.from(pane.querySelectorAll('button'));
+        const saveBtn = buttons.find(b => b.innerText.includes('Lưu (F11)') || (b.innerText.trim() === 'Lưu' && b.classList.contains('ant-btn-primary')));
+        if (saveBtn) {
+            saveBtn.click();
+            await delay(1200);
+            return true;
+        }
+        return false;
     }
 
     // ----------------------------------------------------
-    // 2. KHÂU 2: ĐIỀN THỂ LỰC, 7 CHUYÊN KHOA LÂM SÀNG & KẾT LUẬN
+    // 2. KHÂU 2: CHUYỂN TỪ DANH SÁCH SANG KHÁM SỨC KHỎE
+    // ----------------------------------------------------
+    async function openPatientExamFromList(statusEl) {
+        if (statusEl) statusEl.innerText = '⏳ Đang chuyển sang Danh sách khám sức khoẻ...';
+
+        let switched = await clickMainTab('Danh sách khám sức khoẻ');
+        if (!switched) {
+            const menuItems = Array.from(document.querySelectorAll('.ant-menu-item, li, a'));
+            const dsMenu = menuItems.find(m => m.innerText.trim() === 'Danh sách khám sức khoẻ');
+            if (dsMenu) {
+                dsMenu.click();
+                await delay(600);
+                switched = true;
+            }
+        }
+        await delay(500);
+
+        const pane = document.querySelector('.tab-app-main > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane-active');
+        if (!pane) throw new Error('Không tìm thấy giao diện Danh sách khám sức khoẻ');
+
+        const buttons = Array.from(pane.querySelectorAll('button'));
+        const searchBtn = buttons.find(b => b.innerText.trim() === 'Tìm kiếm');
+        if (searchBtn) {
+            searchBtn.click();
+            await delay(600);
+        }
+
+        if (statusEl) statusEl.innerText = '⏳ Đang mở hồ sơ khám bệnh nhân (hàng 1)...';
+
+        let stethoBtn = pane.querySelector('tbody tr:first-child button.ant-btn-primary') ||
+                        pane.querySelector('tbody tr button.ant-btn-primary i.anticon-ph\\:stethoscope')?.closest('button') ||
+                        pane.querySelector('tbody tr button.ant-btn-primary');
+
+        if (!stethoBtn) {
+            await delay(700);
+            stethoBtn = pane.querySelector('tbody tr:first-child button.ant-btn-primary') || pane.querySelector('tbody tr button.ant-btn-primary');
+        }
+
+        if (!stethoBtn) {
+            throw new Error('Không tìm thấy nút khám (ống nghe) của bệnh nhân trong danh sách');
+        }
+
+        stethoBtn.click();
+        await delay(800);
+
+        for (let i = 0; i < 20; i++) {
+            const activeTab = document.querySelector('.tab-app-main .ant-tabs-tab-active')?.innerText?.trim() || '';
+            if (activeTab.includes('Khám sức khỏe định kỳ')) {
+                await delay(400);
+                return true;
+            }
+            await delay(200);
+        }
+        return true;
+    }
+
+    // ----------------------------------------------------
+    // 3. KHÂU 3: ĐIỀN THỂ LỰC, 16 NỘI DUNG LÂM SÀNG & KẾT LUẬN
     // ----------------------------------------------------
     async function fillKhamTheoBangGiaoDien(statusEl) {
         const cfg = readConfigFromUI();
@@ -178,7 +280,7 @@
 
         // 1. THỂ LỰC
         if (cfg.height || cfg.weight || cfg.pulse || cfg.bp) {
-            if (statusEl) statusEl.innerText = `⏳ Đang điền Thể lực (Cao ${cfg.height}cm, Nặng ${cfg.weight}kg, Mạch ${cfg.pulse}, HA ${cfg.bp})...`;
+            if (statusEl) statusEl.innerText = `⏳ Đang điền Thể lực (Cao ${cfg.height}cm, Nặng ${cfg.weight}kg, Mạch ${cfg.pulse}, HA ${cfg.bp}, ${cfg.theLucRadio})...`;
             await clickSubTab('THỂ LỰC');
             const paneTL = document.querySelector('.vertical-tabs .ant-tabs-tabpane-active') || document;
             const inputsTL = Array.from(paneTL.querySelectorAll('input'));
@@ -201,53 +303,54 @@
         }
 
         // 2. KHÁM LÂM SÀNG
-        if (statusEl) statusEl.innerText = '⏳ Đang điền Khám Lâm Sàng 7 chuyên khoa...';
+        if (statusEl) statusEl.innerText = '⏳ Đang điền 16 nội dung Khám Lâm Sàng 7 chuyên khoa...';
         await clickSubTab('KHÁM LÂM SÀNG');
         const paneLS = document.querySelector('.vertical-tabs .ant-tabs-tabpane-active') || document;
 
         const textareasLS = Array.from(paneLS.querySelectorAll('textarea'));
         const selectsLS = Array.from(paneLS.querySelectorAll('nz-select'));
+        const texts = cfg.examTexts || defaultExamTexts;
 
         // 2.1 NỘI KHOA (8 chuyên khoa: Tuần hoàn, Hô hấp, Tiêu hóa, Thận, Nội tiết, Cơ xương khớp, Thần kinh, Tâm thần)
         if (!cfg.skipNoiKhoa) {
-            const defaultNoiKhoaTexts = [
-                "T1T2 đều rõ không có tiếng bệnh lý",
-                "Lồng ngực cân đối di động đều theo nhịp thở,phổi không có ral",
-                "Bụng mềm không chướng,gan lách không to",
-                "Hiện tại bình thường",
-                "Hiện tại bình thường",
-                "Hiện tại bình thường",
-                "Không có dấu hiệu liệt thần kinh khu trú",
-                "Không có dấu hiệu tâm thần kinh"
+            const noiKhoaTexts = [
+                texts.tuanHoan || defaultExamTexts.tuanHoan,
+                texts.hoHap || defaultExamTexts.hoHap,
+                texts.tieuHoa || defaultExamTexts.tieuHoa,
+                texts.thanTietNieu || defaultExamTexts.thanTietNieu,
+                texts.noiTiet || defaultExamTexts.noiTiet,
+                texts.coXuongKhop || defaultExamTexts.coXuongKhop,
+                texts.thanKinh || defaultExamTexts.thanKinh,
+                texts.tamThan || defaultExamTexts.tamThan
             ];
             for (let i = 0; i < 8; i++) {
-                if (textareasLS[i]) setAngularValue(textareasLS[i], defaultNoiKhoaTexts[i]);
+                if (textareasLS[i]) setAngularValue(textareasLS[i], noiKhoaTexts[i]);
             }
             // Điền 8 cặp dropdown Nội khoa (selects 0..15)
             for (let i = 0; i < 16; i += 2) {
-                if (selectsLS[i]) await selectOption(selectsLS[i], cfg.plChuyenKhoa || "Loại II: Khỏe");
+                if (selectsLS[i]) await selectOption(selectsLS[i], cfg.plChuyenKhoa || "Loại I: Rất khỏe");
                 if (selectsLS[i + 1] && cfg.docNoiKhoa) await selectOption(selectsLS[i + 1], cfg.docNoiKhoa);
             }
         }
 
         // 2.2 NGOẠI KHOA (textarea 8, selects 16, 17)
         if (!cfg.skipNgoaiKhoa) {
-            if (textareasLS[8]) setAngularValue(textareasLS[8], "Hiện tại bình thường");
-            if (selectsLS[16]) await selectOption(selectsLS[16], cfg.plChuyenKhoa || "Loại II: Khỏe");
+            if (textareasLS[8]) setAngularValue(textareasLS[8], texts.ngoaiKhoa || defaultExamTexts.ngoaiKhoa);
+            if (selectsLS[16]) await selectOption(selectsLS[16], cfg.plChuyenKhoa || "Loại I: Rất khỏe");
             if (selectsLS[17] && cfg.docNgoaiKhoa) await selectOption(selectsLS[17], cfg.docNgoaiKhoa);
         }
 
         // 2.3 DA LIỄU (textarea 9, selects 18, 19)
         if (!cfg.skipDaLieu) {
-            if (textareasLS[9]) setAngularValue(textareasLS[9], "Hiện tại bình thường");
-            if (selectsLS[18]) await selectOption(selectsLS[18], cfg.plChuyenKhoa || "Loại II: Khỏe");
+            if (textareasLS[9]) setAngularValue(textareasLS[9], texts.daLieu || defaultExamTexts.daLieu);
+            if (selectsLS[18]) await selectOption(selectsLS[18], cfg.plChuyenKhoa || "Loại I: Rất khỏe");
             if (selectsLS[19] && cfg.docDaLieu) await selectOption(selectsLS[19], cfg.docDaLieu);
         }
 
         // 2.4 SẢN PHỤ KHOA (textarea 10, selects 20, 21)
         if (!cfg.skipSanPhuKhoa) {
-            if (textareasLS[10]) setAngularValue(textareasLS[10], "Hiện tại bình thường");
-            if (selectsLS[20]) await selectOption(selectsLS[20], cfg.plChuyenKhoa || "Loại II: Khỏe");
+            if (textareasLS[10]) setAngularValue(textareasLS[10], texts.sanPhuKhoa || defaultExamTexts.sanPhuKhoa);
+            if (selectsLS[20]) await selectOption(selectsLS[20], cfg.plChuyenKhoa || "Loại I: Rất khỏe");
             if (selectsLS[21] && cfg.docSanPhuKhoa) await selectOption(selectsLS[21], cfg.docSanPhuKhoa);
         }
 
@@ -263,8 +366,8 @@
             if (inpCKPhai) setAngularValue(inpCKPhai, cfg.coKinhPhai || "");
             if (inpCKTrai) setAngularValue(inpCKTrai, cfg.coKinhTrai || "");
 
-            if (textareasLS[11]) setAngularValue(textareasLS[11], "Hiện tại bình thường");
-            if (selectsLS[22]) await selectOption(selectsLS[22], cfg.plChuyenKhoa || "Loại II: Khỏe");
+            if (textareasLS[11]) setAngularValue(textareasLS[11], texts.matKhac || defaultExamTexts.matKhac);
+            if (selectsLS[22]) await selectOption(selectsLS[22], cfg.plChuyenKhoa || "Loại I: Rất khỏe");
             if (selectsLS[23] && cfg.docMat) await selectOption(selectsLS[23], cfg.docMat);
         }
 
@@ -276,28 +379,28 @@
             if (inputsTai[2]) setAngularValue(inputsTai[2], cfg.thinhLucTThuong || "5");
             if (inputsTai[3]) setAngularValue(inputsTai[3], cfg.thinhLucTTham || "0.5");
 
-            if (textareasLS[12]) setAngularValue(textareasLS[12], "Hiện tại bình thường");
-            if (selectsLS[24]) await selectOption(selectsLS[24], cfg.plChuyenKhoa || "Loại II: Khỏe");
+            if (textareasLS[12]) setAngularValue(textareasLS[12], texts.tmhKhac || defaultExamTexts.tmhKhac);
+            if (selectsLS[24]) await selectOption(selectsLS[24], cfg.plChuyenKhoa || "Loại I: Rất khỏe");
             if (selectsLS[25] && cfg.docTmh) await selectOption(selectsLS[25], cfg.docTmh);
         }
 
         // 2.7 RĂNG - HÀM - MẶT (textareas 13..15, selects 26, 27)
         if (!cfg.skipRhm) {
-            if (textareasLS[13]) setAngularValue(textareasLS[13], "Bình thường");
-            if (textareasLS[14]) setAngularValue(textareasLS[14], "Bình thường");
-            if (textareasLS[15]) setAngularValue(textareasLS[15], "Hiện tại bình thường");
-            if (selectsLS[26]) await selectOption(selectsLS[26], cfg.plChuyenKhoa || "Loại II: Khỏe");
+            if (textareasLS[13]) setAngularValue(textareasLS[13], texts.rhmHamTren || defaultExamTexts.rhmHamTren);
+            if (textareasLS[14]) setAngularValue(textareasLS[14], texts.rhmHamDuoi || defaultExamTexts.rhmHamDuoi);
+            if (textareasLS[15]) setAngularValue(textareasLS[15], texts.rhmKhac || defaultExamTexts.rhmKhac);
+            if (selectsLS[26]) await selectOption(selectsLS[26], cfg.plChuyenKhoa || "Loại I: Rất khỏe");
             if (selectsLS[27] && cfg.docRhm) await selectOption(selectsLS[27], cfg.docRhm);
         }
 
         // 3. KẾT LUẬN
-        if (statusEl) statusEl.innerText = '⏳ Đang điền Kết Luận...';
+        if (statusEl) statusEl.innerText = '⏳ Đang điền Kết Luận & Phân loại...';
         await clickSubTab('KẾT LUẬN');
         const paneKL = document.querySelector('.vertical-tabs .ant-tabs-tabpane-active') || document;
 
         // 3.1 Phân loại chung
         const cbsKL = Array.from(paneKL.querySelectorAll('.ant-checkbox-wrapper'));
-        const targetCb = cbsKL.find(c => c.innerText.includes(cfg.plKetLuan) || (cfg.plKetLuan.includes('Loại II') && c.innerText.includes('Loại II')));
+        const targetCb = cbsKL.find(c => c.innerText.includes(cfg.plKetLuan) || (cfg.plKetLuan.includes('Loại I:') && c.innerText.includes('Loại I:')) || (cfg.plKetLuan.includes('Loại II') && c.innerText.includes('Loại II')));
         if (targetCb && !targetCb.classList.contains('ant-checkbox-wrapper-checked')) {
             targetCb.click();
         }
@@ -329,12 +432,12 @@
 
         // 3.5 Bấm Lưu
         if (cfg.autoSave) {
-            if (statusEl) statusEl.innerText = '⏳ Đang bấm Lưu...';
+            if (statusEl) statusEl.innerText = '⏳ Đang bấm Lưu (F11)...';
             await delay(350);
             const saveBtn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.trim() === 'Lưu' || b.innerText.includes('Lưu (F11)'));
             if (saveBtn) {
                 saveBtn.click();
-                if (statusEl) statusEl.innerText = `✅ ĐÃ ĐIỀN XONG & ĐÃ LƯU (Cao ${cfg.height}, Nặng ${cfg.weight}, Mạch ${cfg.pulse}, HA ${cfg.bp})!`;
+                if (statusEl) statusEl.innerText = `✅ ĐÃ ĐIỀN XONG & ĐÃ LƯU (${cfg.theLucRadio}, Cao ${cfg.height}, Nặng ${cfg.weight}, Mạch ${cfg.pulse}, HA ${cfg.bp})!`;
             } else {
                 if (statusEl) statusEl.innerText = '✅ ĐÃ ĐIỀN XONG (Vui lòng bấm Lưu)!';
             }
@@ -343,13 +446,35 @@
         }
     }
 
+    // ----------------------------------------------------
+    // 4. QUY TRÌNH LIÊN HOÀN (TIẾP ĐÓN -> KHÁM -> LƯU)
+    // ----------------------------------------------------
+    async function runFullWorkflow(statusEl) {
+        if (statusEl) statusEl.innerText = '🚀 [1/4] Đang điền Tiếp đón bắt buộc...';
+        await fillTiepDonConfig(statusEl);
+        await delay(500);
+
+        if (statusEl) statusEl.innerText = '🚀 [2/4] Đang lưu Tiếp đón...';
+        await saveTiepDon(statusEl);
+
+        if (statusEl) statusEl.innerText = '🚀 [3/4] Đang chuyển sang Danh sách & mở Khám...';
+        await openPatientExamFromList(statusEl);
+
+        if (statusEl) statusEl.innerText = '🚀 [4/4] Đang điền Thể lực, Lâm sàng, Kết luận & Lưu...';
+        await fillKhamTheoBangGiaoDien(statusEl);
+
+        if (statusEl) statusEl.innerText = '🎉 HOÀN TẤT LIÊN HOÀN: Tiếp đón ➔ Mở khám ➔ Điền & Đã lưu!';
+    }
+
     function readConfigFromUI() {
         return {
+            selectedLevel: document.getElementById('cfg-theluc-pl')?.value === 'Loại 1' ? '1' : '2',
+
             height: document.getElementById('cfg-height')?.value?.trim() || '150',
             weight: document.getElementById('cfg-weight')?.value?.trim() || '48',
             pulse: document.getElementById('cfg-pulse')?.value?.trim() || '80',
             bp: document.getElementById('cfg-bp')?.value?.trim() || '100/60',
-            theLucRadio: document.getElementById('cfg-theluc-pl')?.value || 'Loại 2',
+            theLucRadio: document.getElementById('cfg-theluc-pl')?.value || 'Loại 1',
 
             docNoiKhoa: document.getElementById('cfg-doc-noi')?.value?.trim() || '',
             skipNoiKhoa: document.getElementById('cfg-skip-noi')?.checked ?? false,
@@ -380,33 +505,105 @@
             docRhm: document.getElementById('cfg-doc-rhm')?.value?.trim() || '',
             skipRhm: document.getElementById('cfg-skip-rhm')?.checked ?? false,
 
-            plChuyenKhoa: document.getElementById('cfg-pl-ck')?.value || 'Loại II: Khỏe',
-            plKetLuan: document.getElementById('cfg-pl-ketluan')?.value || 'Loại II: Khỏe',
+            plChuyenKhoa: document.getElementById('cfg-pl-ck')?.value || 'Loại I: Rất khỏe',
+            plKetLuan: document.getElementById('cfg-pl-ketluan')?.value || 'Loại I: Rất khỏe',
             docKetLuan: document.getElementById('cfg-doc-ketluan')?.value?.trim() || '',
             gioKetThuc: document.getElementById('cfg-gio-kt')?.value?.trim() || '07:45',
-            autoSave: document.getElementById('cfg-auto-save')?.checked ?? true
+            autoSave: document.getElementById('cfg-auto-save')?.checked ?? true,
+
+            examTexts: {
+                tuanHoan: document.getElementById('cfg-txt-tuanhoan')?.value?.trim() || defaultExamTexts.tuanHoan,
+                hoHap: document.getElementById('cfg-txt-hohap')?.value?.trim() || defaultExamTexts.hoHap,
+                tieuHoa: document.getElementById('cfg-txt-tieuhoa')?.value?.trim() || defaultExamTexts.tieuHoa,
+                thanTietNieu: document.getElementById('cfg-txt-thantn')?.value?.trim() || defaultExamTexts.thanTietNieu,
+                noiTiet: document.getElementById('cfg-txt-noitiet')?.value?.trim() || defaultExamTexts.noiTiet,
+                coXuongKhop: document.getElementById('cfg-txt-coxuongkhop')?.value?.trim() || defaultExamTexts.coXuongKhop,
+                thanKinh: document.getElementById('cfg-txt-thankinh')?.value?.trim() || defaultExamTexts.thanKinh,
+                tamThan: document.getElementById('cfg-txt-tamthan')?.value?.trim() || defaultExamTexts.tamThan,
+                ngoaiKhoa: document.getElementById('cfg-txt-ngoaikhoa')?.value?.trim() || defaultExamTexts.ngoaiKhoa,
+                daLieu: document.getElementById('cfg-txt-dalieu')?.value?.trim() || defaultExamTexts.daLieu,
+                sanPhuKhoa: document.getElementById('cfg-txt-sanphukhoa')?.value?.trim() || defaultExamTexts.sanPhuKhoa,
+                matKhac: document.getElementById('cfg-txt-matkhac')?.value?.trim() || defaultExamTexts.matKhac,
+                tmhKhac: document.getElementById('cfg-txt-tmhkhac')?.value?.trim() || defaultExamTexts.tmhKhac,
+                rhmHamTren: document.getElementById('cfg-txt-rhmhamtren')?.value?.trim() || defaultExamTexts.rhmHamTren,
+                rhmHamDuoi: document.getElementById('cfg-txt-rhmhamduoi')?.value?.trim() || defaultExamTexts.rhmHamDuoi,
+                rhmKhac: document.getElementById('cfg-txt-rhmkhac')?.value?.trim() || defaultExamTexts.rhmKhac
+            }
         };
+    }
+
+    function applyCategoryLevel(level) {
+        const isLevel1 = (level === '1' || level === 1);
+        const theLucSelect = document.getElementById('cfg-theluc-pl');
+        if (theLucSelect) theLucSelect.value = isLevel1 ? 'Loại 1' : 'Loại 2';
+
+        const plCkSelect = document.getElementById('cfg-pl-ck');
+        if (plCkSelect) plCkSelect.value = isLevel1 ? 'Loại I: Rất khỏe' : 'Loại II: Khỏe';
+
+        const plKlSelect = document.getElementById('cfg-pl-ketluan');
+        if (plKlSelect) plKlSelect.value = isLevel1 ? 'Loại I: Rất khỏe' : 'Loại II: Khỏe';
+
+        updateQuickPlUI(isLevel1 ? '1' : '2');
+        const updated = readConfigFromUI();
+        saveConfig(updated);
+    }
+
+    function updateQuickPlUI(level) {
+        const btn1 = document.getElementById('btn-quick-pl1');
+        const btn2 = document.getElementById('btn-quick-pl2');
+        const indicator = document.getElementById('pl-indicator');
+        if (level === '1') {
+            if (btn1) {
+                btn1.style.outline = '2px solid #52c41a';
+                btn1.style.background = '#f6ffed';
+                btn1.style.color = '#389e0d';
+            }
+            if (btn2) {
+                btn2.style.outline = 'none';
+                btn2.style.background = '#ffffff';
+                btn2.style.color = '#595959';
+            }
+            if (indicator) {
+                indicator.innerText = '🟢 Loại 1 (Rất khỏe / Tốt)';
+                indicator.style.color = '#389e0d';
+            }
+        } else {
+            if (btn2) {
+                btn2.style.outline = '2px solid #1890ff';
+                btn2.style.background = '#e6f7ff';
+                btn2.style.color = '#096dd9';
+            }
+            if (btn1) {
+                btn1.style.outline = 'none';
+                btn1.style.background = '#ffffff';
+                btn1.style.color = '#595959';
+            }
+            if (indicator) {
+                indicator.innerText = '🔵 Loại 2 (Khỏe / Khá)';
+                indicator.style.color = '#096dd9';
+            }
+        }
     }
 
     let isRunning = false;
 
-    async function handleRunClick() {
+    async function handleSmartRun() {
         if (isRunning) return;
         isRunning = true;
         const statusEl = document.getElementById('his-panel-status');
         const runBtn = document.getElementById('his-panel-run-btn');
         if (runBtn) {
             runBtn.disabled = true;
-            runBtn.innerText = '⏳ Đang điền theo thông số...';
+            runBtn.innerText = '⏳ Đang xử lý...';
         }
 
         try {
             const activeTopTab = document.querySelector('.tab-app-main .ant-tabs-tab-active')?.innerText || '';
             if (activeTopTab.includes('Tiếp đón')) {
-                await fillTiepDonConfig(statusEl);
-                await delay(500);
+                await runFullWorkflow(statusEl);
+            } else {
+                await fillKhamTheoBangGiaoDien(statusEl);
             }
-            await fillKhamTheoBangGiaoDien(statusEl);
         } catch (e) {
             console.error('Lỗi tự động hóa:', e);
             if (statusEl) statusEl.innerText = '❌ Lỗi: ' + e.message;
@@ -420,19 +617,20 @@
     }
 
     // ----------------------------------------------------
-    // 3. BẢNG ĐIỀU KHIỂN GIAO DIỆN CHUYÊN NGHIỆP
+    // 5. BẢNG ĐIỀU KHIỂN GIAO DIỆN CHUYÊN NGHIỆP
     // ----------------------------------------------------
     function mountControlPanel() {
         if (document.getElementById('his-tool-control-panel')) return;
 
         const cfg = loadConfig();
+        const texts = cfg.examTexts || defaultExamTexts;
 
         const panel = document.createElement('div');
         panel.id = 'his-tool-control-panel';
         panel.style.position = 'fixed';
         panel.style.bottom = '15px';
         panel.style.right = '15px';
-        panel.style.width = '440px';
+        panel.style.width = '450px';
         panel.style.backgroundColor = '#ffffff';
         panel.style.borderRadius = '12px';
         panel.style.boxShadow = '0 12px 35px rgba(0,0,0,0.4)';
@@ -443,25 +641,41 @@
 
         panel.innerHTML = `
             <div style="background: linear-gradient(135deg, #fa8c16, #ff7a45); color: white; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 13px;">
-                <span>⚙️ BẢNG CẤU HÌNH & TỰ ĐỘNG ĐIỀN HIS V2</span>
+                <span>⚙️ CẤU HÌNH & TỰ ĐỘNG ĐIỀN HIS V2</span>
                 <div>
                     <button id="his-panel-reload-btn" title="Nạp lại bảng điều khiển" style="background: rgba(255,255,255,0.25); border: none; color: white; font-size: 12px; cursor: pointer; border-radius: 4px; padding: 2px 7px; margin-right: 4px;">🔄</button>
                     <button id="his-panel-toggle-btn" style="background: rgba(255,255,255,0.25); border: none; color: white; font-size: 12px; cursor: pointer; border-radius: 4px; padding: 2px 8px;">➖ Thu nhỏ</button>
                 </div>
             </div>
-            <div id="his-panel-body" style="padding: 12px; font-size: 12px; color: #262626; line-height: 1.4; max-height: 540px; overflow-y: auto;">
+            <div id="his-panel-body" style="padding: 12px; font-size: 12px; color: #262626; line-height: 1.4; max-height: 560px; overflow-y: auto;">
                 
+                <!-- BỘ CHỌN NHANH PHÂN LOẠI TOÀN DIỆN (LOẠI 1 / LOẠI 2) -->
+                <div style="background: #f0f5ff; border: 1px solid #91d5ff; padding: 8px 10px; border-radius: 8px; margin-bottom: 8px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <b style="color: #0050b3; font-size: 11px;">⭐ CHỌN NHANH PHÂN LOẠI 1 CHẠM:</b>
+                        <span id="pl-indicator" style="font-size: 11px; font-weight: bold;"></span>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                        <button id="btn-quick-pl1" type="button" style="padding: 6px 4px; border: 1px solid #d9d9d9; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; transition: all 0.2s;">
+                            🟢 LOẠI 1 (Rất khỏe / Tốt)
+                        </button>
+                        <button id="btn-quick-pl2" type="button" style="padding: 6px 4px; border: 1px solid #d9d9d9; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; transition: all 0.2s;">
+                            🔵 LOẠI 2 (Khỏe / Khá)
+                        </button>
+                    </div>
+                </div>
+
                 <!-- 1. BẢNG THỂ LỰC -->
-                <div style="background: #f0f5ff; border: 1px solid #adc6ff; padding: 8px 10px; border-radius: 8px; margin-bottom: 8px;">
-                    <b style="color: #1d39c4; font-size: 12px;">🏋️ 1. THỂ LỰC</b>
+                <div style="background: #f9f0ff; border: 1px solid #d3adf7; padding: 8px 10px; border-radius: 8px; margin-bottom: 8px;">
+                    <b style="color: #531dab; font-size: 12px;">🏋️ 1. THỂ LỰC</b>
                     <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-top: 5px;">
                         <div>
                             <label style="font-size: 10px; color: #595959;">Cao (cm):</label>
-                            <input id="cfg-height" type="text" value="${cfg.height}" style="width: 100%; padding: 4px; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; text-align: center; color: #1d39c4;">
+                            <input id="cfg-height" type="text" value="${cfg.height}" style="width: 100%; padding: 4px; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; text-align: center; color: #531dab;">
                         </div>
                         <div>
                             <label style="font-size: 10px; color: #595959;">Nặng (kg):</label>
-                            <input id="cfg-weight" type="text" value="${cfg.weight}" style="width: 100%; padding: 4px; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; text-align: center; color: #1d39c4;">
+                            <input id="cfg-weight" type="text" value="${cfg.weight}" style="width: 100%; padding: 4px; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; text-align: center; color: #531dab;">
                         </div>
                         <div>
                             <label style="font-size: 10px; color: #595959;">Mạch (l/p):</label>
@@ -474,7 +688,7 @@
                     </div>
                     <div style="margin-top: 5px; display: flex; align-items: center; justify-content: space-between;">
                         <span style="font-size: 11px; color: #595959;">Phân loại thể lực:</span>
-                        <select id="cfg-theluc-pl" style="padding: 2px 6px; border-radius: 4px; border: 1px solid #d9d9d9; font-weight: bold; font-size: 11px; color: #1d39c4;">
+                        <select id="cfg-theluc-pl" style="padding: 2px 6px; border-radius: 4px; border: 1px solid #d9d9d9; font-weight: bold; font-size: 11px; color: #531dab;">
                             <option value="Loại 1" ${cfg.theLucRadio === 'Loại 1' ? 'selected' : ''}>Loại 1 (Tốt)</option>
                             <option value="Loại 2" ${cfg.theLucRadio === 'Loại 2' ? 'selected' : ''}>Loại 2 (Khá)</option>
                             <option value="Loại 3" ${cfg.theLucRadio === 'Loại 3' ? 'selected' : ''}>Loại 3 (Trung bình)</option>
@@ -490,8 +704,8 @@
                         <div>
                             <span style="font-size: 10px; color: #595959;">Phân loại CK:</span>
                             <select id="cfg-pl-ck" style="padding: 1px 4px; font-size: 10px; border-radius: 3px; border: 1px solid #d9d9d9; font-weight: bold;">
-                                <option value="Loại II: Khỏe" ${cfg.plChuyenKhoa.includes('Loại II') ? 'selected' : ''}>Loại II: Khỏe</option>
                                 <option value="Loại I: Rất khỏe" ${cfg.plChuyenKhoa.includes('Loại I:') ? 'selected' : ''}>Loại I: Rất khỏe</option>
+                                <option value="Loại II: Khỏe" ${cfg.plChuyenKhoa.includes('Loại II') ? 'selected' : ''}>Loại II: Khỏe</option>
                                 <option value="Loại III: Trung bình" ${cfg.plChuyenKhoa.includes('Loại III') ? 'selected' : ''}>Loại III: Trung bình</option>
                             </select>
                         </div>
@@ -580,6 +794,82 @@
                             </td>
                         </tr>
                     </table>
+
+                    <!-- TÙY CHỈNH 16 NỘI DUNG KHÁM MẪU -->
+                    <details id="details-exam-texts" style="margin-top: 6px; background: #ffffff; border: 1px dashed #52c41a; border-radius: 6px; padding: 6px;">
+                        <summary style="font-weight: bold; color: #237804; cursor: pointer; font-size: 11px; user-select: none;">
+                            📝 Tùy chỉnh 16 Nội dung khám lâm sàng (Xem / Sửa)
+                        </summary>
+                        <div style="margin-top: 6px; max-height: 200px; overflow-y: auto; font-size: 10px; display: flex; flex-direction: column; gap: 4px;">
+                            <div>
+                                <span style="color: #595959;">Tuần hoàn:</span>
+                                <input id="cfg-txt-tuanhoan" type="text" value="${texts.tuanHoan}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                            </div>
+                            <div>
+                                <span style="color: #595959;">Hô hấp:</span>
+                                <input id="cfg-txt-hohap" type="text" value="${texts.hoHap}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                            </div>
+                            <div>
+                                <span style="color: #595959;">Tiêu hóa:</span>
+                                <input id="cfg-txt-tieuhoa" type="text" value="${texts.tieuHoa}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                            </div>
+                            <div>
+                                <span style="color: #595959;">Thận - Tiết niệu:</span>
+                                <input id="cfg-txt-thantn" type="text" value="${texts.thanTietNieu}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                            </div>
+                            <div>
+                                <span style="color: #595959;">Nội tiết:</span>
+                                <input id="cfg-txt-noitiet" type="text" value="${texts.noiTiet}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                            </div>
+                            <div>
+                                <span style="color: #595959;">Cơ - Xương - Khớp:</span>
+                                <input id="cfg-txt-coxuongkhop" type="text" value="${texts.coXuongKhop}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                            </div>
+                            <div>
+                                <span style="color: #595959;">Thần kinh:</span>
+                                <input id="cfg-txt-thankinh" type="text" value="${texts.thanKinh}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                            </div>
+                            <div>
+                                <span style="color: #595959;">Tâm thần:</span>
+                                <input id="cfg-txt-tamthan" type="text" value="${texts.tamThan}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                            </div>
+                            <div>
+                                <span style="color: #595959;">Ngoại khoa:</span>
+                                <input id="cfg-txt-ngoaikhoa" type="text" value="${texts.ngoaiKhoa}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                            </div>
+                            <div>
+                                <span style="color: #595959;">Da liễu:</span>
+                                <input id="cfg-txt-dalieu" type="text" value="${texts.daLieu}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                            </div>
+                            <div>
+                                <span style="color: #595959;">Sản phụ khoa:</span>
+                                <input id="cfg-txt-sanphukhoa" type="text" value="${texts.sanPhuKhoa}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                            </div>
+                            <div>
+                                <span style="color: #595959;">Mắt (Bệnh khác):</span>
+                                <input id="cfg-txt-matkhac" type="text" value="${texts.matKhac}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                            </div>
+                            <div>
+                                <span style="color: #595959;">Tai Mũi Họng (Bệnh khác):</span>
+                                <input id="cfg-txt-tmhkhac" type="text" value="${texts.tmhKhac}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                            </div>
+                            <div>
+                                <span style="color: #595959;">RHM - Hàm trên:</span>
+                                <input id="cfg-txt-rhmhamtren" type="text" value="${texts.rhmHamTren}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                            </div>
+                            <div>
+                                <span style="color: #595959;">RHM - Hàm dưới:</span>
+                                <input id="cfg-txt-rhmhamduoi" type="text" value="${texts.rhmHamDuoi}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                            </div>
+                            <div>
+                                <span style="color: #595959;">Răng Hàm Mặt (Bệnh khác):</span>
+                                <input id="cfg-txt-rhmkhac" type="text" value="${texts.rhmKhac}" style="width: 100%; padding: 2px 4px; font-size: 10px; border: 1px solid #d9d9d9; border-radius: 3px;">
+                            </div>
+                            <div style="display: flex; justify-content: flex-end; margin-top: 4px;">
+                                <button id="btn-reset-exam-texts" type="button" style="font-size: 10px; padding: 2px 8px; background: #fafafa; border: 1px solid #d9d9d9; border-radius: 4px; cursor: pointer;">🔄 Khôi phục chuẩn</button>
+                            </div>
+                        </div>
+                    </details>
                 </div>
 
                 <!-- 3. BẢNG KẾT LUẬN -->
@@ -612,13 +902,13 @@
                     </div>
                 </div>
 
-                <!-- 4. NÚT ĐIỀU KHIỂN -->
+                <!-- 4. NÚT ĐIỀU KHIỂN ĐA TÁC VỤ -->
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
-                    <button id="btn-fill-td-only" style="padding: 9px 6px; background: #fa8c16; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; box-shadow: 0 2px 6px rgba(250,140,22,0.35);">
-                        ⚡ Điền Tiếp Đón (*)
+                    <button id="btn-fill-td-only" style="padding: 8px 4px; background: #fa8c16; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; box-shadow: 0 2px 6px rgba(250,140,22,0.35);">
+                        ⚡ 1. Điền Tiếp Đón (*)
                     </button>
-                    <button id="btn-save-cfg-only" style="padding: 9px 6px; background: #1890ff; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; box-shadow: 0 2px 6px rgba(24,144,255,0.35);">
-                        💾 Lưu Thông Số
+                    <button id="btn-full-flow" style="padding: 8px 4px; background: #722ed1; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; box-shadow: 0 2px 6px rgba(114,46,209,0.35);">
+                        🔄 2. Tiếp Đón ➔ Khám ➔ Lưu
                     </button>
                 </div>
 
@@ -632,6 +922,16 @@
 
         document.body.appendChild(panel);
 
+        updateQuickPlUI(cfg.selectedLevel || '1');
+
+        // Event: Quick Category Selection
+        const btnPl1 = document.getElementById('btn-quick-pl1');
+        if (btnPl1) btnPl1.onclick = () => applyCategoryLevel('1');
+
+        const btnPl2 = document.getElementById('btn-quick-pl2');
+        if (btnPl2) btnPl2.onclick = () => applyCategoryLevel('2');
+
+        // Event: Auto-save config when any input changes
         const inputs = panel.querySelectorAll('input, select');
         inputs.forEach(inp => {
             inp.addEventListener('change', () => {
@@ -640,6 +940,35 @@
             });
         });
 
+        // Event: Reset Exam Texts
+        const resetBtn = document.getElementById('btn-reset-exam-texts');
+        if (resetBtn) {
+            resetBtn.onclick = () => {
+                document.getElementById('cfg-txt-tuanhoan').value = defaultExamTexts.tuanHoan;
+                document.getElementById('cfg-txt-hohap').value = defaultExamTexts.hoHap;
+                document.getElementById('cfg-txt-tieuhoa').value = defaultExamTexts.tieuHoa;
+                document.getElementById('cfg-txt-thantn').value = defaultExamTexts.thanTietNieu;
+                document.getElementById('cfg-txt-noitiet').value = defaultExamTexts.noiTiet;
+                document.getElementById('cfg-txt-coxuongkhop').value = defaultExamTexts.coXuongKhop;
+                document.getElementById('cfg-txt-thankinh').value = defaultExamTexts.thanKinh;
+                document.getElementById('cfg-txt-tamthan').value = defaultExamTexts.tamThan;
+                document.getElementById('cfg-txt-ngoaikhoa').value = defaultExamTexts.ngoaiKhoa;
+                document.getElementById('cfg-txt-dalieu').value = defaultExamTexts.daLieu;
+                document.getElementById('cfg-txt-sanphukhoa').value = defaultExamTexts.sanPhuKhoa;
+                document.getElementById('cfg-txt-matkhac').value = defaultExamTexts.matKhac;
+                document.getElementById('cfg-txt-tmhkhac').value = defaultExamTexts.tmhKhac;
+                document.getElementById('cfg-txt-rhmhamtren').value = defaultExamTexts.rhmHamTren;
+                document.getElementById('cfg-txt-rhmhamduoi').value = defaultExamTexts.rhmHamDuoi;
+                document.getElementById('cfg-txt-rhmkhac').value = defaultExamTexts.rhmKhac;
+
+                const c = readConfigFromUI();
+                saveConfig(c);
+                const statusEl = document.getElementById('his-panel-status');
+                if (statusEl) statusEl.innerText = '🔄 Đã khôi phục 16 nội dung khám mẫu chuẩn!';
+            };
+        }
+
+        // Toggle panel collapse
         let isCollapsed = false;
         const body = document.getElementById('his-panel-body');
         const toggleBtn = document.getElementById('his-panel-toggle-btn');
@@ -664,23 +993,21 @@
         const btnTdOnly = document.getElementById('btn-fill-td-only');
         if (btnTdOnly) btnTdOnly.onclick = () => fillTiepDonConfig(statusEl);
 
-        const btnSaveCfg = document.getElementById('btn-save-cfg-only');
-        if (btnSaveCfg) {
-            btnSaveCfg.onclick = () => {
-                const c = readConfigFromUI();
-                saveConfig(c);
-                if (statusEl) statusEl.innerText = '💾 Đã lưu cấu hình thông số thành công!';
-            };
-        }
+        const btnFullFlow = document.getElementById('btn-full-flow');
+        if (btnFullFlow) btnFullFlow.onclick = () => runFullWorkflow(statusEl);
 
         const runBtn = document.getElementById('his-panel-run-btn');
-        if (runBtn) runBtn.onclick = handleRunClick;
+        if (runBtn) runBtn.onclick = handleSmartRun;
     }
 
     window.addEventListener('keydown', (e) => {
         if (e.key === 'F9') {
             e.preventDefault();
-            handleRunClick();
+            handleSmartRun();
+        } else if (e.key === 'F10') {
+            e.preventDefault();
+            const statusEl = document.getElementById('his-panel-status');
+            runFullWorkflow(statusEl);
         }
     });
 
