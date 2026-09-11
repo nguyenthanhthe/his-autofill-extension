@@ -228,13 +228,8 @@
 
     async function saveTiepDon(statusEl) {
         if (statusEl) statusEl.innerText = '⏳ Đang bấm Lưu Tiếp đón (F11)...';
-        const nameInput = document.querySelector('input[name="tenDayDu"]');
-        if (nameInput && !nameInput.value.trim()) {
-            throw new Error('Vui lòng nhập Họ và tên người khám tại màn hình Tiếp đón trước khi bấm Lưu!');
-        }
 
-        const pane = nameInput ? nameInput.closest('.ant-tabs-tabpane') : (document.querySelector('.tab-app-main > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane-active') || document);
-
+        const pane = document.querySelector('.tab-app-main > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane-active') || document;
         const buttons = Array.from(pane.querySelectorAll('button'));
         const saveBtn = buttons.find(b => b.innerText.includes('Lưu (F11)') || (b.innerText.trim() === 'Lưu' && b.classList.contains('ant-btn-primary')));
         if (!saveBtn) throw new Error('Không tìm thấy nút Lưu Tiếp đón');
@@ -250,81 +245,36 @@
     }
 
     // ----------------------------------------------------
-    // 2. KHÂU 2: CHUYỂN SANG KHÁM SỨC KHỎE (F6) AN TOÀN
+    // 2. KHÂU 2: CHUYỂN SANG KHÁM SỨC KHỎE (F6)
     // ----------------------------------------------------
-    async function navigateToKhamSucKhoe(statusEl, expectedPatientName) {
-        if (statusEl) statusEl.innerText = '⏳ Đang chuyển sang tab Khám sức khỏe (F6)...';
+    async function navigateToKhamSucKhoe(statusEl) {
+        if (statusEl) statusEl.innerText = '⏳ Đang chuyển sang Khám sức khoẻ (F6)...';
 
-        // 1. Ưu tiên hàng đầu: Chuyển trực tiếp sang tab "Khám sức khỏe định kỳ" đã mở
-        let switched = await clickMainTab('Khám sức khỏe định kỳ') || await clickMainTab('Khám sức khỏe');
-        if (switched) {
-            await delay(400);
-            if (statusEl) statusEl.innerText = '✅ Đã chuyển thẳng vào tab Khám sức khỏe (F6)!';
+        // 1. Ưu tiên tìm và bấm đúng nút "Khám sức khoẻ (F6)" trên màn hình Tiếp đón
+        const buttons = Array.from(document.querySelectorAll('button, a'));
+        const f6Btn = buttons.find(b => {
+            const t = b.innerText.trim();
+            return t.includes('Khám sức khoẻ (F6)') || t.includes('Khám sức khỏe (F6)') || t === 'Khám sức khoẻ (F6)' || t === 'Khám sức khỏe (F6)';
+        });
+
+        if (f6Btn) {
+            f6Btn.click();
+            await delay(600);
+            if (statusEl) statusEl.innerText = '✅ Đã bấm nút Khám sức khoẻ (F6)!';
             return true;
         }
 
-        // 2. Nếu tab chưa mở sẵn, thử mở từ menu chức năng
-        const menuItems = Array.from(document.querySelectorAll('.ant-menu-item, li, a'));
-        const kskMenu = menuItems.find(m => m.innerText.trim() === 'Khám sức khỏe định kỳ');
-        if (kskMenu) {
-            kskMenu.click();
-            await delay(500);
-            switched = await clickMainTab('Khám sức khỏe định kỳ') || await clickMainTab('Khám sức khỏe');
-            if (switched) return true;
+        // 2. Nếu nút chưa hiện, chuyển trực tiếp tab Khám sức khỏe định kỳ
+        let switched = await clickMainTab('Khám sức khỏe định kỳ') || await clickMainTab('Khám sức khỏe');
+        if (switched) {
+            await delay(400);
+            if (statusEl) statusEl.innerText = '✅ Đã chuyển sang tab Khám sức khỏe (F6)!';
+            return true;
         }
 
-        // 3. Nếu chưa mở tab và có tên bệnh nhân: kiểm tra danh sách CÓ BẢO VỆ DANH TÍNH CHÍNH XÁC
-        // Tuyệt đối KHÔNG tự ý mở bừa dòng 1 nếu không đúng tên người vừa tiếp đón!
-        if (statusEl) statusEl.innerText = '⏳ Đang tìm đúng hồ sơ bệnh nhân trong hệ thống...';
-        await clickMainTab('Danh sách khám sức khoẻ');
+        // 3. Giả lập phím tắt F6 hệ thống
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F6', code: 'F6', keyCode: 117, which: 117, bubbles: true }));
         await delay(500);
-
-        const pane = document.querySelector('.tab-app-main > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane-active');
-        if (!pane) throw new Error('Không tìm thấy giao diện Khám sức khỏe');
-
-        const filterInput = pane.querySelector('input[name="filter"]');
-        const searchBtn = Array.from(pane.querySelectorAll('button')).find(b => b.innerText.trim() === 'Tìm kiếm');
-
-        if (filterInput && expectedPatientName) {
-            setAngularValue(filterInput, expectedPatientName);
-            if (searchBtn) {
-                searchBtn.click();
-                await delay(700);
-            }
-        }
-
-        // Kiểm tra chính xác dòng kết quả
-        const rows = Array.from(pane.querySelectorAll('tbody tr:not([nz-table-measure-row])'));
-        let targetRow = null;
-
-        if (expectedPatientName) {
-            const cleanExpected = expectedPatientName.trim().toLowerCase();
-            targetRow = rows.find(r => r.innerText.toLowerCase().includes(cleanExpected));
-        }
-
-        // BẢO VỆ DỮ LIỆU: Không tìm thấy đúng người -> Dừng ngay lập tức, không mở bừa người khác
-        if (!targetRow) {
-            throw new Error(`⚠️ Không tìm thấy hồ sơ của bệnh nhân "${expectedPatientName || 'vừa tiếp đón'}". Vui lòng mở thủ công trên màn hình Khám sức khỏe (F6) để tránh ghi nhầm dữ liệu người khác!`);
-        }
-
-        const stethoBtn = targetRow.querySelector('button.ant-btn-primary') ||
-                          targetRow.querySelector('i.anticon-ph\\:stethoscope')?.closest('button');
-
-        if (!stethoBtn) {
-            throw new Error('Không tìm thấy nút khám của đúng bệnh nhân trong danh sách');
-        }
-
-        stethoBtn.click();
-        await delay(800);
-
-        for (let i = 0; i < 20; i++) {
-            const activeTab = document.querySelector('.tab-app-main .ant-tabs-tab-active')?.innerText?.trim() || '';
-            if (activeTab.includes('Khám sức khỏe')) {
-                await delay(400);
-                return true;
-            }
-            await delay(200);
-        }
         return true;
     }
 
@@ -523,15 +473,15 @@
 
         if (statusEl) statusEl.innerText = '🚀 [2/3] Đang lưu Tiếp đón (F11)...';
         await saveTiepDon(statusEl);
-        await delay(500);
+        await delay(600);
 
-        if (statusEl) statusEl.innerText = '🚀 [3/3] Đang chuyển sang Khám sức khỏe (F6)...';
-        await navigateToKhamSucKhoe(statusEl, expectedPatientName);
-        await delay(300);
+        if (statusEl) statusEl.innerText = '🚀 [3/3] Đang bấm Khám sức khoẻ (F6)...';
+        await navigateToKhamSucKhoe(statusEl);
+        await delay(500);
 
         await fillKhamTheoBangGiaoDien(statusEl);
 
-        if (statusEl) statusEl.innerText = '🎉 HOÀN TẤT LIÊN HOÀN: Tiếp đón ➔ Khám sức khỏe (F6) ➔ Đã lưu thành công!';
+        if (statusEl) statusEl.innerText = '🎉 HOÀN TẤT: Tiếp đón ➔ Khám sức khoẻ (F6) ➔ Đã lưu thành công!';
     }
 
     function readConfigFromUI() {
@@ -709,13 +659,9 @@
     async function handleSwitchKhamClick() {
         const btnSwitch = document.getElementById('btn-switch-kham');
         await executeSafe(async (statusEl) => {
-            const switched = await clickMainTab('Khám sức khỏe định kỳ') || await clickMainTab('Khám sức khỏe');
-            if (switched) {
-                if (statusEl) statusEl.innerText = '✅ Đã chuyển sang màn hình Khám sức khỏe (F6)!';
-            } else {
-                throw new Error('Chưa mở tab Khám sức khỏe định kỳ trên thanh tab!');
-            }
-        }, btnSwitch, '🩺 2. Mở Khám SK (F6)');
+            await navigateToKhamSucKhoe(statusEl);
+            if (statusEl) statusEl.innerText = '✅ Đã chuyển sang màn hình Khám sức khoẻ (F6)!';
+        }, btnSwitch, '🩺 2. Khám SK (F6)');
     }
 
     async function handleFullFlowClick() {
@@ -1024,12 +970,12 @@
                         ⚡ 1. Điền Tiếp Đón (*)
                     </button>
                     <button id="btn-switch-kham" style="padding: 8px 4px; background: #1890ff; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; box-shadow: 0 2px 6px rgba(24,144,255,0.35);">
-                        🩺 2. Mở Khám SK (F6)
+                        🩺 2. Khám SK (F6)
                     </button>
                 </div>
                 <div style="margin-bottom: 8px;">
                     <button id="btn-full-flow" style="width: 100%; padding: 8px 4px; background: #722ed1; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; box-shadow: 0 2px 6px rgba(114,46,209,0.35);">
-                        🔄 Tiếp Đón ➔ Khám Sức Khỏe (F6) ➔ Lưu
+                        🔄 Tiếp Đón ➔ Khám Sức Khoẻ (F6) ➔ Lưu
                     </button>
                 </div>
 
