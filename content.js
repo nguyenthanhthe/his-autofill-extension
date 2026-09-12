@@ -1,12 +1,13 @@
 /**
- * HIS V2 - Tiện Ích Hỗ Trợ Khám Sức Khỏe & Tiếp Đón Đa Chuyên Khoa
+ * HIS V20 - Tiện Ích Hỗ Trợ Khám Sức Khỏe & Tiếp Đón Đa Chuyên Khoa
  * Dành cho cán bộ y tế tại v20.ytecoso.vn
  */
 
 (function () {
     'use strict';
 
-    const CONFIG_KEY = 'his_v2_autofill_config_v7';
+    const CONFIG_KEY = 'his_v2_autofill_config_v8';
+    const PREV_CONFIG_KEY = 'his_v2_autofill_config_v7';
 
     function escapeHtml(str) {
         if (str === null || str === undefined) return '';
@@ -38,7 +39,10 @@
     };
 
     const defaultCfg = {
-        selectedLevel: '1',
+        activeTab: 'tiepdon', // 'tiepdon' | 'khambenh' | 'caidat'
+        selectedLevel: '1',   // '1' | '2' | '3' | '4'
+        autoPilot: false,
+
         height: '150',
         weight: '48',
         pulse: '80',
@@ -57,8 +61,8 @@
         docSanPhuKhoa: '',
         skipSanPhuKhoa: true,
 
-        matPhai: '6',
-        matTrai: '7',
+        matPhai: '10',
+        matTrai: '10',
         coKinhPhai: '',
         coKinhTrai: '',
         docMat: '24',
@@ -76,6 +80,7 @@
 
         plChuyenKhoa: 'Loại I: Rất khỏe',
         plKetLuan: 'Loại I: Rất khỏe',
+        icdKetLuan: 'Z10',
         docKetLuan: '02',
         gioKetThuc: '07:45',
         autoSave: true,
@@ -85,7 +90,10 @@
 
     function loadConfig() {
         try {
-            const saved = localStorage.getItem(CONFIG_KEY);
+            let saved = localStorage.getItem(CONFIG_KEY);
+            if (!saved) {
+                saved = localStorage.getItem(PREV_CONFIG_KEY);
+            }
             if (saved) {
                 const parsed = JSON.parse(saved);
                 return Object.assign({}, defaultCfg, parsed, {
@@ -110,9 +118,11 @@
     }
 
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-        chrome.storage.local.get([CONFIG_KEY], (res) => {
+        chrome.storage.local.get([CONFIG_KEY, PREV_CONFIG_KEY], (res) => {
             if (res && res[CONFIG_KEY] && !localStorage.getItem(CONFIG_KEY)) {
                 localStorage.setItem(CONFIG_KEY, JSON.stringify(res[CONFIG_KEY]));
+            } else if (res && res[PREV_CONFIG_KEY] && !localStorage.getItem(CONFIG_KEY)) {
+                localStorage.setItem(CONFIG_KEY, JSON.stringify(res[PREV_CONFIG_KEY]));
             }
         });
     }
@@ -151,6 +161,14 @@
 
     const selectOption = async (selectEl, textMatch) => {
         if (!selectEl || !textMatch) return false;
+        
+        const cleanMatch = textMatch.trim().toLowerCase();
+        // Kiểm tra xem đã đúng giá trị chưa để tránh mở dropdown không cần thiết
+        const currentSelected = selectEl.querySelector('.ant-select-selection-item')?.innerText?.trim() || '';
+        if (currentSelected && (currentSelected.toLowerCase() === cleanMatch || currentSelected.toLowerCase().includes(cleanMatch))) {
+            return true;
+        }
+
         const topControl = selectEl.querySelector('nz-select-top-control') || selectEl;
         topControl.click();
         await delay(120);
@@ -164,7 +182,6 @@
             input.dispatchEvent(new KeyboardEvent('keyup', { key: textMatch[0] || 'a', bubbles: true }));
         }
 
-        const cleanMatch = textMatch.trim().toLowerCase();
         const wordRegex = new RegExp(`(^|\\s|\\|)${cleanMatch}(\\s|\\||$)`, 'i');
 
         for (let i = 0; i < 25; i++) {
@@ -190,18 +207,188 @@
         return false;
     };
 
-    const findInputByLabel = (container, labelText) => {
-        if (!container) return null;
-        const labels = Array.from(container.querySelectorAll('label, .ant-form-item-label'));
-        const target = labels.find(l => l.innerText.trim().includes(labelText));
-        return target ? target.closest('.ant-form-item, nz-form-item, div.row, div')?.querySelector('input') : null;
+    // Helper tìm dòng chuyên khoa theo tiêu đề cột đầu tiên trong bảng
+    const findTableRowByTitle = (pane, titleKeyword) => {
+        const rows = Array.from(pane.querySelectorAll('tr'));
+        const cleanKeyword = titleKeyword.trim().toLowerCase();
+        return rows.find(r => {
+            const firstTd = r.querySelector('td');
+            if (!firstTd) return false;
+            const text = firstTd.innerText.trim().toLowerCase();
+            return text === cleanKeyword || text.includes(cleanKeyword);
+        });
+    };
+
+    // Helper điền dòng chuyên khoa dạng bảng (Textarea, Phân loại, Bác sĩ)
+    const fillExamTableRow = async (pane, rowTitle, textVal, plVal, docVal) => {
+        const row = findTableRowByTitle(pane, rowTitle);
+        if (!row) return false;
+
+        const ta = row.querySelector('textarea');
+        if (ta && textVal !== undefined) {
+            setAngularValue(ta, textVal);
+        }
+
+        const selects = Array.from(row.querySelectorAll('nz-select'));
+        if (selects[0] && plVal) {
+            await selectOption(selects[0], plVal);
+        }
+        if (selects[1] && docVal) {
+            await selectOption(selects[1], docVal);
+        }
+        return true;
+    };
+
+    // Helper tìm khối form động (Mắt, TMH, RHM)
+    const findDynamicFormByTitle = (pane, titleKeyword) => {
+        const dfs = Array.from(pane.querySelectorAll('ord-dynamic-form'));
+        const cleanKeyword = titleKeyword.trim().toLowerCase();
+        return dfs.find(df => {
+            const title = df.querySelector('legend, h3, h4, h5, .title')?.innerText || 
+                          df.previousElementSibling?.innerText || '';
+            return title.trim().toLowerCase().includes(cleanKeyword);
+        });
+    };
+
+    // Helper kiểm tra thông báo lỗi nổi của hệ thống HIS (Ant Design)
+    const checkHisErrorMessage = () => {
+        const errorEl = document.querySelector('.ant-message-error, .ant-notification-notice-error');
+        if (errorEl && errorEl.offsetParent !== null) {
+            return errorEl.innerText.trim();
+        }
+        return null;
     };
 
     // ----------------------------------------------------
-    // 1. KHÂU 1: TIẾP ĐÓN KHÁM SỨC KHỎE
+    // NHẬN DIỆN THÔNG MINH: ĐỘ TUỔI & GIỚI TÍNH & BỆNH NHÂN
+    // ----------------------------------------------------
+    let cachedPatient = {
+        name: '',
+        cccd: '',
+        birthYear: '',
+        gender: ''
+    };
+
+    function scanPatientInfo() {
+        // 1. Nếu đang mở tab Khám sức khỏe định kỳ
+        const paneKham = document.querySelector('.tab-app-main > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane-active') || document;
+        const hoTenInp = paneKham.querySelector('input[name="ho_va_ten"]');
+        if (hoTenInp && hoTenInp.value.trim()) {
+            cachedPatient.name = hoTenInp.value.trim();
+            cachedPatient.cccd = paneKham.querySelector('input[name="so_cccd"]')?.value.trim() || '';
+            const dob = paneKham.querySelector('input[placeholder="Ngày/Tháng/Năm"]')?.value.trim() || '';
+            const yMatch = dob.match(/\d{4}$/);
+            if (yMatch) cachedPatient.birthYear = yMatch[0];
+
+            const radios = Array.from(paneKham.querySelectorAll('.ant-radio-wrapper, label, span'));
+            const namRadio = radios.find(r => r.innerText.trim() === 'Nam');
+            const nuRadio = radios.find(r => r.innerText.trim() === 'Nữ');
+            if (namRadio && (namRadio.classList.contains('ant-radio-wrapper-checked') || !!namRadio.querySelector('input:checked'))) {
+                cachedPatient.gender = 'Nam';
+            } else if (nuRadio && (nuRadio.classList.contains('ant-radio-wrapper-checked') || !!nuRadio.querySelector('input:checked'))) {
+                cachedPatient.gender = 'Nữ';
+            }
+            return;
+        }
+
+        // 2. Nếu đang mở tab Tiếp đón khám sức khoẻ
+        const activeTopTab = document.querySelector('.tab-app-main .ant-tabs-tab-active')?.innerText || '';
+        if (activeTopTab.includes('Tiếp đón')) {
+            const paneTD = document.querySelector('.tab-app-main > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane-active') || document;
+            const text = paneTD.innerText;
+            const match = text.match(/(\d{10,18})\s*-\s*([^\n\r\-]+)-\s*(\d{4})/);
+            if (match) {
+                cachedPatient.cccd = match[1].trim();
+                cachedPatient.name = match[2].trim();
+                cachedPatient.birthYear = match[3].trim();
+            } else {
+                const nameInp = paneTD.querySelector('input[name="tenDayDu"]');
+                if (nameInp && nameInp.value.trim()) cachedPatient.name = nameInp.value.trim();
+                const cccdInp = paneTD.querySelector('input[name="soCmt"]');
+                if (cccdInp && cccdInp.value.trim()) cachedPatient.cccd = cccdInp.value.trim();
+            }
+
+            const radios = Array.from(paneTD.querySelectorAll('.ant-radio-wrapper, label, span'));
+            const namRadio = radios.find(r => r.innerText.trim() === 'Nam');
+            const nuRadio = radios.find(r => r.innerText.trim() === 'Nữ');
+            if (namRadio && (namRadio.classList.contains('ant-radio-wrapper-checked') || !!namRadio.querySelector('input:checked'))) {
+                cachedPatient.gender = 'Nam';
+            } else if (nuRadio && (nuRadio.classList.contains('ant-radio-wrapper-checked') || !!nuRadio.querySelector('input:checked'))) {
+                cachedPatient.gender = 'Nữ';
+            }
+        }
+    }
+
+    function detectAgeGroup(pane) {
+        let dobStr = '';
+        const dobInput = pane?.querySelector('input[name="ngaySinh"]') || 
+                         document.querySelector('input[name="ngaySinh"]') ||
+                         pane?.querySelector('input[placeholder="Ngày/Tháng/Năm"]');
+        if (dobInput && dobInput.value) {
+            dobStr = dobInput.value.trim();
+        } else if (cachedPatient.birthYear) {
+            dobStr = cachedPatient.birthYear;
+        } else {
+            const bodyText = document.body.innerText;
+            const match = bodyText.match(/(\d{10,18}\s*-\s*[^\n\r\-]+-\s*(\d{4}))/);
+            if (match && match[2]) dobStr = match[2];
+        }
+
+        if (dobStr) {
+            let birthYear = 0;
+            const parts = dobStr.split(/[\/\-\.]/);
+            if (parts.length === 3) {
+                birthYear = parseInt(parts[2], 10);
+            } else if (/^\d{4}$/.test(dobStr)) {
+                birthYear = parseInt(dobStr, 10);
+            }
+            if (birthYear > 1900 && birthYear <= 2030) {
+                const currentYear = new Date().getFullYear();
+                const age = currentYear - birthYear;
+                if (age < 6) return 'dưới 6 tuổi';
+                if (age < 18) return 'từ đủ 6 tuổi đến dưới 18 tuổi';
+                return 'từ đủ 18 tuổi trở lên';
+            }
+        }
+        return 'từ đủ 18 tuổi trở lên';
+    }
+
+    async function getOrDetectGender() {
+        if (cachedPatient.gender) return cachedPatient.gender;
+        scanPatientInfo();
+        if (cachedPatient.gender) return cachedPatient.gender;
+
+        const isKhamActive = document.querySelector('.tab-app-main .ant-tabs-tab-active')?.innerText?.includes('Khám sức khỏe');
+        if (isKhamActive) {
+            await clickSubTab('HÀNH CHÍNH');
+            await delay(150);
+            scanPatientInfo();
+            return cachedPatient.gender;
+        }
+        return '';
+    }
+
+    function getSelectedPatientBanner() {
+        scanPatientInfo();
+        const parts = [];
+        if (cachedPatient.cccd) parts.push(cachedPatient.cccd);
+        if (cachedPatient.name) parts.push(cachedPatient.name);
+        if (cachedPatient.birthYear) parts.push(cachedPatient.birthYear);
+        if (parts.length > 0) {
+            let res = parts.join(' - ');
+            if (cachedPatient.gender) res += ` (${cachedPatient.gender})`;
+            return res;
+        }
+
+        const match = document.body.innerText.match(/(\d{10,18}\s*-\s*[^\n\r\-]+-\s*\d{4})/);
+        return match ? match[1].trim() : '';
+    }
+
+    // ----------------------------------------------------
+    // 1. MODULE TIẾP ĐÓN KHÁM SỨC KHỎE
     // ----------------------------------------------------
     async function fillTiepDonConfig(statusEl) {
-        if (statusEl) statusEl.innerText = '⏳ Đang mở tab và điền cấu hình Tiếp đón...';
+        if (statusEl) statusEl.innerText = '⏳ Đang mở tab và điền Tiếp đón...';
 
         await clickMainTab('Tiếp đón khám sức khoẻ');
         await delay(350);
@@ -209,21 +396,40 @@
         const nameInput = document.querySelector('input[name="tenDayDu"]');
         const pane = nameInput ? nameInput.closest('.ant-tabs-tabpane') : (document.querySelector('.tab-app-main > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane-active') || document);
 
+        // Chặn sớm: Nếu chưa có thông tin người khám
+        const patientName = nameInput?.value?.trim() || cachedPatient.name?.trim();
+        if (!patientName) {
+            throw new Error('Chưa có thông tin người khám! Vui lòng gõ Tên hoặc CCCD vào ô Tìm kiếm trước.');
+        }
+
         const timeInputs = Array.from(pane.querySelectorAll('input[placeholder="__:__"]'));
         if (timeInputs[0]) setAngularValue(timeInputs[0], "07:30");
 
-        const selects = Array.from(pane.querySelectorAll('nz-select'));
+        const ageGroup = detectAgeGroup(pane);
+        if (statusEl) statusEl.innerText = `⏳ Điền Tiếp đón (Nhóm tuổi: ${ageGroup})...`;
+
+        let selects = Array.from(pane.querySelectorAll('nz-select'));
 
         if (selects[6]) await selectOption(selects[6], "00000");
         if (selects[9]) await selectOption(selects[9], "Khám sức khoẻ định kỳ");
-        if (selects[10]) await selectOption(selects[10], "từ đủ 18 tuổi trở lên");
-        if (selects[11]) await selectOption(selects[11], "Các đối tượng khác");
-        if (selects[12]) await selectOption(selects[12], "Xã hội hoá");
+        if (selects[10]) {
+            await selectOption(selects[10], ageGroup);
+            await delay(300);
+        }
+        selects = Array.from(pane.querySelectorAll('nz-select'));
+        if (selects[11]) {
+            await selectOption(selects[11], "Các đối tượng khác");
+            await delay(200);
+        }
+        selects = Array.from(pane.querySelectorAll('nz-select'));
+        if (selects[12]) {
+            await selectOption(selects[12], "Xã hội hoá");
+        }
 
         const taLyDo = pane.querySelector('textarea[name="lyDoVaoVien"]') || pane.querySelector('textarea');
         if (taLyDo) setAngularValue(taLyDo, "Khám sức khoẻ định kỳ");
 
-        if (statusEl) statusEl.innerText = '✅ Đã điền xong các mục Tiếp đón (*) bắt buộc!';
+        if (statusEl) statusEl.innerText = '✅ Đã điền xong Tiếp đón bắt buộc!';
     }
 
     async function saveTiepDon(statusEl) {
@@ -236,215 +442,295 @@
 
         saveBtn.click();
 
-        for (let i = 0; i < 20; i++) {
+        for (let i = 0; i < 25; i++) {
             await delay(150);
+            const err = checkHisErrorMessage();
+            if (err) throw new Error(`HIS báo lỗi: ${err}`);
             if (!saveBtn.classList.contains('ant-btn-loading')) break;
         }
-        await delay(500);
+        await delay(300);
+        const lateErr = checkHisErrorMessage();
+        if (lateErr) throw new Error(`HIS báo lỗi: ${lateErr}`);
         return true;
     }
 
     // ----------------------------------------------------
-    // 2. KHÂU 2: CHUYỂN SANG KHÁM SỨC KHỎE (F6)
+    // 2. CHUYỂN SANG KHÁM SỨC KHỎE (F6)
     // ----------------------------------------------------
     async function navigateToKhamSucKhoe(statusEl) {
         if (statusEl) statusEl.innerText = '⏳ Đang chuyển sang Khám sức khoẻ (F6)...';
 
-        // 1. Ưu tiên tìm và bấm đúng nút "Khám sức khoẻ (F6)" trên màn hình Tiếp đón
-        const buttons = Array.from(document.querySelectorAll('button, a'));
-        const f6Btn = buttons.find(b => {
-            const t = b.innerText.trim();
-            return t.includes('Khám sức khoẻ (F6)') || t.includes('Khám sức khỏe (F6)') || t === 'Khám sức khoẻ (F6)' || t === 'Khám sức khỏe (F6)';
-        });
+        const currentTabs = Array.from(document.querySelectorAll('.tab-app-main .ant-tabs-tab, .ant-tabs-tab'));
+        const alreadyKhamTab = currentTabs.find(t => t.innerText.includes('Khám sức khỏe định kỳ') || t.innerText.includes('Khám sức khỏe'));
+        if (alreadyKhamTab) {
+            alreadyKhamTab.click();
+            await delay(350);
+            return true;
+        }
+
+        const pane = document.querySelector('.tab-app-main > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane-active') || document;
+        const buttons = Array.from(pane.querySelectorAll('button'));
+        const f6Btn = buttons.find(b => b.innerText.includes('Khám sức khoẻ (F6)') || b.innerText.includes('Khám sức khoẻ') || b.innerText.includes('(F6)'));
 
         if (f6Btn) {
             f6Btn.click();
             await delay(600);
-            if (statusEl) statusEl.innerText = '✅ Đã bấm nút Khám sức khoẻ (F6)!';
             return true;
         }
 
-        // 2. Nếu nút chưa hiện, chuyển trực tiếp tab Khám sức khỏe định kỳ
-        let switched = await clickMainTab('Khám sức khỏe định kỳ') || await clickMainTab('Khám sức khỏe');
-        if (switched) {
-            await delay(400);
-            if (statusEl) statusEl.innerText = '✅ Đã chuyển sang tab Khám sức khỏe (F6)!';
+        const activeTopTab = document.querySelector('.tab-app-main .ant-tabs-tab-active')?.innerText || '';
+        if (activeTopTab.includes('Tiếp đón')) {
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F6', code: 'F6', keyCode: 117, bubbles: true }));
+            await delay(600);
             return true;
         }
 
-        // 3. Giả lập phím tắt F6 hệ thống
-        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F6', code: 'F6', keyCode: 117, which: 117, bubbles: true }));
-        await delay(500);
-        return true;
+        throw new Error('Không tìm thấy nút Khám sức khoẻ (F6)');
     }
 
     // ----------------------------------------------------
-    // 3. KHÂU 3: ĐIỀN THỂ LỰC, 16 NỘI DUNG LÂM SÀNG & KẾT LUẬN
+    // 3. MODULE KHÁM SỨC KHỎE: THỂ LỰC, 7 CHUYÊN KHOA & KẾT LUẬN (Z10)
     // ----------------------------------------------------
     async function fillKhamTheoBangGiaoDien(statusEl) {
-        const cfg = readConfigFromUI();
-        saveConfig(cfg);
+        const cfg = loadConfig();
+        const texts = cfg.examTexts || defaultExamTexts;
 
-        if (statusEl) statusEl.innerText = '⏳ Đang mở Khám sức khỏe định kỳ...';
-        await clickMainTab('Khám sức khỏe định kỳ');
-
-        // 1. THỂ LỰC
-        if (cfg.height || cfg.weight || cfg.pulse || cfg.bp) {
-            if (statusEl) statusEl.innerText = `⏳ Đang điền Thể lực (Cao ${cfg.height}cm, Nặng ${cfg.weight}kg, Mạch ${cfg.pulse}, HA ${cfg.bp}, ${cfg.theLucRadio})...`;
-            await clickSubTab('THỂ LỰC');
-            const paneTL = document.querySelector('.vertical-tabs .ant-tabs-tabpane-active') || document;
-            const inputsTL = Array.from(paneTL.querySelectorAll('input'));
-
-            const inpHeight = findInputByLabel(paneTL, 'Chiều cao') || inputsTL[0];
-            const inpWeight = findInputByLabel(paneTL, 'Cân nặng') || inputsTL[1];
-            const inpPulse = findInputByLabel(paneTL, 'Mạch') || inputsTL[3];
-            const inpBp = paneTL.querySelector('input[name="huyet_ap"]') || findInputByLabel(paneTL, 'Huyết áp') || inputsTL[4];
-
-            if (cfg.height && inpHeight) setAngularValue(inpHeight, cfg.height);
-            if (cfg.weight && inpWeight) setAngularValue(inpWeight, cfg.weight);
-            if (cfg.pulse && inpPulse) setAngularValue(inpPulse, cfg.pulse);
-            if (cfg.bp && inpBp) setAngularValue(inpBp, cfg.bp);
-
-            if (cfg.theLucRadio) {
-                const radiosTL = Array.from(paneTL.querySelectorAll('.ant-radio-wrapper'));
-                const targetRadio = radiosTL.find(r => r.innerText.includes(cfg.theLucRadio));
-                if (targetRadio && !targetRadio.classList.contains('ant-radio-wrapper-checked')) {
-                    targetRadio.click();
-                }
+        // Chặn sớm: Đảm bảo đang mở đúng hồ sơ Khám Sức Khỏe
+        const activeTopTab = document.querySelector('.tab-app-main .ant-tabs-tab-active')?.innerText || '';
+        if (!activeTopTab.includes('Khám sức khỏe')) {
+            const switched = await clickMainTab('Khám sức khỏe');
+            if (!switched) {
+                throw new Error('Chưa mở hồ sơ Khám Sức Khỏe! Vui lòng chọn người khám trước.');
             }
-            await delay(250);
+            await delay(350);
+        }
+        const hasVerticalTabs = document.querySelector('.vertical-tabs');
+        if (!hasVerticalTabs) {
+            throw new Error('Chưa mở hồ sơ Khám Sức Khỏe! Vui lòng chọn người khám trước.');
         }
 
-        // 2. KHÁM LÂM SÀNG
-        if (statusEl) statusEl.innerText = '⏳ Đang điền 16 nội dung Khám Lâm Sàng 7 chuyên khoa...';
+        // Tự động nhận diện Giới tính
+        const gender = await getOrDetectGender();
+        const isMale = (gender === 'Nam');
+        const shouldSkipSan = isMale || cfg.skipSanPhuKhoa;
+
+        if (statusEl) {
+            const genderTag = gender ? ` [Giới tính: ${gender}]` : '';
+            statusEl.innerText = `⏳ Bắt đầu điền hồ sơ (${cfg.theLucRadio}${genderTag})...`;
+        }
+
+        // 1. THỂ LỰC
+        await clickSubTab('THỂ LỰC');
+        const paneTL = document.querySelector('.vertical-tabs .ant-tabs-tabpane-active') || document;
+
+        const inputsTL = Array.from(paneTL.querySelectorAll('input[type="text"], input:not([type])'));
+        if (inputsTL[0] && cfg.height) setAngularValue(inputsTL[0], cfg.height);
+        if (inputsTL[1] && cfg.weight) setAngularValue(inputsTL[1], cfg.weight);
+        if (inputsTL[3] && cfg.pulse) setAngularValue(inputsTL[3], cfg.pulse);
+        if (inputsTL[4] && cfg.bp) setAngularValue(inputsTL[4], cfg.bp);
+
+        const radiosTL = Array.from(paneTL.querySelectorAll('.ant-radio-wrapper'));
+        const targetRadioTL = radiosTL.find(r => r.innerText.trim() === cfg.theLucRadio);
+        if (targetRadioTL && !targetRadioTL.classList.contains('ant-radio-wrapper-checked')) {
+            targetRadioTL.click();
+        }
+
+        // 2. KHÁM LÂM SÀNG (7 CHUYÊN KHOA)
+        if (statusEl) statusEl.innerText = '⏳ Đang điền 7 chuyên khoa lâm sàng...';
         await clickSubTab('KHÁM LÂM SÀNG');
         const paneLS = document.querySelector('.vertical-tabs .ant-tabs-tabpane-active') || document;
 
-        const textareasLS = Array.from(paneLS.querySelectorAll('textarea'));
-        const selectsLS = Array.from(paneLS.querySelectorAll('nz-select'));
-        const texts = cfg.examTexts || defaultExamTexts;
-
-        // 2.1 NỘI KHOA (8 chuyên khoa)
+        // 1. Nội khoa (8 chuyên khoa con: Tuần hoàn, Hô hấp, Tiêu hóa, Thận - Tiết niệu, Nội tiết, Cơ - Xương - Khớp, Thần kinh, Tâm thần)
         if (!cfg.skipNoiKhoa) {
-            const noiKhoaTexts = [
-                texts.tuanHoan || defaultExamTexts.tuanHoan,
-                texts.hoHap || defaultExamTexts.hoHap,
-                texts.tieuHoa || defaultExamTexts.tieuHoa,
-                texts.thanTietNieu || defaultExamTexts.thanTietNieu,
-                texts.noiTiet || defaultExamTexts.noiTiet,
-                texts.coXuongKhop || defaultExamTexts.coXuongKhop,
-                texts.thanKinh || defaultExamTexts.thanKinh,
-                texts.tamThan || defaultExamTexts.tamThan
+            const noiKhoaRows = [
+                { title: 'Tuần hoàn', text: texts.tuanHoan || defaultExamTexts.tuanHoan },
+                { title: 'Hô hấp', text: texts.hoHap || defaultExamTexts.hoHap },
+                { title: 'Tiêu hóa', text: texts.tieuHoa || defaultExamTexts.tieuHoa },
+                { title: 'Thận - Tiết niệu', text: texts.thanTietNieu || defaultExamTexts.thanTietNieu },
+                { title: 'Nội tiết', text: texts.noiTiet || defaultExamTexts.noiTiet },
+                { title: 'Cơ - Xương - Khớp', text: texts.coXuongKhop || defaultExamTexts.coXuongKhop },
+                { title: 'Thần kinh', text: texts.thanKinh || defaultExamTexts.thanKinh },
+                { title: 'Tâm thần', text: texts.tamThan || defaultExamTexts.tamThan },
             ];
-            for (let i = 0; i < 8; i++) {
-                if (textareasLS[i]) setAngularValue(textareasLS[i], noiKhoaTexts[i]);
-            }
-            for (let i = 0; i < 16; i += 2) {
-                if (selectsLS[i]) await selectOption(selectsLS[i], cfg.plChuyenKhoa || "Loại I: Rất khỏe");
-                if (selectsLS[i + 1] && cfg.docNoiKhoa) await selectOption(selectsLS[i + 1], cfg.docNoiKhoa);
+            for (const item of noiKhoaRows) {
+                await fillExamTableRow(paneLS, item.title, item.text, cfg.plChuyenKhoa || "Loại I: Rất khỏe", cfg.docNoiKhoa);
             }
         }
 
-        // 2.2 NGOẠI KHOA
+        // 2. Ngoại khoa
         if (!cfg.skipNgoaiKhoa) {
-            if (textareasLS[8]) setAngularValue(textareasLS[8], texts.ngoaiKhoa || defaultExamTexts.ngoaiKhoa);
-            if (selectsLS[16]) await selectOption(selectsLS[16], cfg.plChuyenKhoa || "Loại I: Rất khỏe");
-            if (selectsLS[17] && cfg.docNgoaiKhoa) await selectOption(selectsLS[17], cfg.docNgoaiKhoa);
+            await fillExamTableRow(paneLS, 'Ngoại khoa', texts.ngoaiKhoa || defaultExamTexts.ngoaiKhoa, cfg.plChuyenKhoa || "Loại I: Rất khỏe", cfg.docNgoaiKhoa);
         }
 
-        // 2.3 DA LIỄU
+        // 3. Da liễu
         if (!cfg.skipDaLieu) {
-            if (textareasLS[9]) setAngularValue(textareasLS[9], texts.daLieu || defaultExamTexts.daLieu);
-            if (selectsLS[18]) await selectOption(selectsLS[18], cfg.plChuyenKhoa || "Loại I: Rất khỏe");
-            if (selectsLS[19] && cfg.docDaLieu) await selectOption(selectsLS[19], cfg.docDaLieu);
+            await fillExamTableRow(paneLS, 'Da liễu', texts.daLieu || defaultExamTexts.daLieu, cfg.plChuyenKhoa || "Loại I: Rất khỏe", cfg.docDaLieu);
         }
 
-        // 2.4 SẢN PHỤ KHOA
-        if (!cfg.skipSanPhuKhoa) {
-            if (textareasLS[10]) setAngularValue(textareasLS[10], texts.sanPhuKhoa || defaultExamTexts.sanPhuKhoa);
-            if (selectsLS[20]) await selectOption(selectsLS[20], cfg.plChuyenKhoa || "Loại I: Rất khỏe");
-            if (selectsLS[21] && cfg.docSanPhuKhoa) await selectOption(selectsLS[21], cfg.docSanPhuKhoa);
+        // 4. Sản phụ khoa (Tự động bỏ qua nếu là Nam)
+        if (!shouldSkipSan) {
+            await fillExamTableRow(paneLS, 'Sản phụ khoa', texts.sanPhuKhoa || defaultExamTexts.sanPhuKhoa, cfg.plChuyenKhoa || "Loại I: Rất khỏe", cfg.docSanPhuKhoa);
         }
 
-        // 2.5 MẮT
+        // 5. Mắt (Định vị đúng khối form Mắt, không lấy nhầm input ngầm của select)
         if (!cfg.skipMat) {
-            const inpKKPhai = paneLS.querySelector('input[name="khong_kinh_mat_phai"]') || paneLS.querySelectorAll('input[placeholder="Nhập giá trị từ 0 đến 10"]')[0];
-            const inpKKTrai = paneLS.querySelector('input[name="khong_kinh_mat_trai"]') || paneLS.querySelectorAll('input[placeholder="Nhập giá trị từ 0 đến 10"]')[1];
-            const inpCKPhai = paneLS.querySelector('input[name="co_kinh_mat_phai"]') || paneLS.querySelectorAll('input[placeholder="Nhập giá trị từ 0 đến 10"]')[2];
-            const inpCKTrai = paneLS.querySelector('input[name="co_kinh_mat_trai"]') || paneLS.querySelectorAll('input[placeholder="Nhập giá trị từ 0 đến 10"]')[3];
+            const dfMat = findDynamicFormByTitle(paneLS, 'MẮT');
+            if (dfMat) {
+                const inputsMat = Array.from(dfMat.querySelectorAll('input:not(.ant-select-selection-search-input)'));
+                const inpPhai = dfMat.querySelector('input[name="khong_kinh_mat_phai"]') || inputsMat[0];
+                const inpTrai = dfMat.querySelector('input[name="khong_kinh_mat_trai"]') || inputsMat[1];
+                const inpCoKinhPhai = dfMat.querySelector('input[name="co_kinh_mat_phai"]') || inputsMat[2];
+                const inpCoKinhTrai = dfMat.querySelector('input[name="co_kinh_mat_trai"]') || inputsMat[3];
 
-            if (inpKKPhai) setAngularValue(inpKKPhai, cfg.matPhai || "6");
-            if (inpKKTrai) setAngularValue(inpKKTrai, cfg.matTrai || "7");
-            if (inpCKPhai) setAngularValue(inpCKPhai, cfg.coKinhPhai || "");
-            if (inpCKTrai) setAngularValue(inpCKTrai, cfg.coKinhTrai || "");
+                if (inpPhai && cfg.matPhai) setAngularValue(inpPhai, cfg.matPhai);
+                if (inpTrai && cfg.matTrai) setAngularValue(inpTrai, cfg.matTrai);
+                if (inpCoKinhPhai && cfg.coKinhPhai) setAngularValue(inpCoKinhPhai, cfg.coKinhPhai);
+                if (inpCoKinhTrai && cfg.coKinhTrai) setAngularValue(inpCoKinhTrai, cfg.coKinhTrai);
 
-            if (textareasLS[11]) setAngularValue(textareasLS[11], texts.matKhac || defaultExamTexts.matKhac);
-            if (selectsLS[22]) await selectOption(selectsLS[22], cfg.plChuyenKhoa || "Loại I: Rất khỏe");
-            if (selectsLS[23] && cfg.docMat) await selectOption(selectsLS[23], cfg.docMat);
+                const taMat = dfMat.querySelector('textarea');
+                if (taMat) setAngularValue(taMat, texts.matKhac || defaultExamTexts.matKhac);
+
+                const selectsMat = Array.from(dfMat.querySelectorAll('nz-select'));
+                if (selectsMat[0]) await selectOption(selectsMat[0], cfg.plChuyenKhoa || "Loại I: Rất khỏe");
+                if (selectsMat[1] && cfg.docMat) await selectOption(selectsMat[1], cfg.docMat);
+            }
         }
 
-        // 2.6 TAI - MŨI - HỌNG
+        // 6. Tai - Mũi - Họng (Định vị đúng khối form TMH)
         if (!cfg.skipTmh) {
-            const inputsTai = Array.from(paneLS.querySelectorAll('input[placeholder="m"]'));
-            if (inputsTai[0]) setAngularValue(inputsTai[0], cfg.thinhLucPThuong || "5");
-            if (inputsTai[1]) setAngularValue(inputsTai[1], cfg.thinhLucPTham || "0.5");
-            if (inputsTai[2]) setAngularValue(inputsTai[2], cfg.thinhLucTThuong || "5");
-            if (inputsTai[3]) setAngularValue(inputsTai[3], cfg.thinhLucTTham || "0.5");
+            const dfTmh = findDynamicFormByTitle(paneLS, 'TAI - MŨI - HỌNG') || findDynamicFormByTitle(paneLS, 'TAI');
+            if (dfTmh) {
+                const inputsTmh = Array.from(dfTmh.querySelectorAll('input:not(.ant-select-selection-search-input)'));
+                if (inputsTmh[0]) setAngularValue(inputsTmh[0], cfg.thinhLucPThuong || '5');
+                if (inputsTmh[1]) setAngularValue(inputsTmh[1], cfg.thinhLucPTham || '0.5');
+                if (inputsTmh[2]) setAngularValue(inputsTmh[2], cfg.thinhLucTThuong || '5');
+                if (inputsTmh[3]) setAngularValue(inputsTmh[3], cfg.thinhLucTTham || '0.5');
 
-            if (textareasLS[12]) setAngularValue(textareasLS[12], texts.tmhKhac || defaultExamTexts.tmhKhac);
-            if (selectsLS[24]) await selectOption(selectsLS[24], cfg.plChuyenKhoa || "Loại I: Rất khỏe");
-            if (selectsLS[25] && cfg.docTmh) await selectOption(selectsLS[25], cfg.docTmh);
+                const taTmh = dfTmh.querySelector('textarea');
+                if (taTmh) setAngularValue(taTmh, texts.tmhKhac || defaultExamTexts.tmhKhac);
+
+                const selectsTmh = Array.from(dfTmh.querySelectorAll('nz-select'));
+                if (selectsTmh[0]) await selectOption(selectsTmh[0], cfg.plChuyenKhoa || "Loại I: Rất khỏe");
+                if (selectsTmh[1] && cfg.docTmh) await selectOption(selectsTmh[1], cfg.docTmh);
+            }
         }
 
-        // 2.7 RĂNG - HÀM - MẶT
+        // 7. Răng - Hàm - Mặt (Định vị đúng khối form RHM)
         if (!cfg.skipRhm) {
-            if (textareasLS[13]) setAngularValue(textareasLS[13], texts.rhmHamTren || defaultExamTexts.rhmHamTren);
-            if (textareasLS[14]) setAngularValue(textareasLS[14], texts.rhmHamDuoi || defaultExamTexts.rhmHamDuoi);
-            if (textareasLS[15]) setAngularValue(textareasLS[15], texts.rhmKhac || defaultExamTexts.rhmKhac);
-            if (selectsLS[26]) await selectOption(selectsLS[26], cfg.plChuyenKhoa || "Loại I: Rất khỏe");
-            if (selectsLS[27] && cfg.docRhm) await selectOption(selectsLS[27], cfg.docRhm);
+            const dfRhm = findDynamicFormByTitle(paneLS, 'RĂNG - HÀM - MẶT') || findDynamicFormByTitle(paneLS, 'RĂNG');
+            if (dfRhm) {
+                const tasRhm = Array.from(dfRhm.querySelectorAll('textarea'));
+                if (tasRhm[0]) setAngularValue(tasRhm[0], texts.rhmHamTren || defaultExamTexts.rhmHamTren);
+                if (tasRhm[1]) setAngularValue(tasRhm[1], texts.rhmHamDuoi || defaultExamTexts.rhmHamDuoi);
+                if (tasRhm[2]) setAngularValue(tasRhm[2], texts.rhmKhac || defaultExamTexts.rhmKhac);
+
+                const selectsRhm = Array.from(dfRhm.querySelectorAll('nz-select'));
+                if (selectsRhm[0]) await selectOption(selectsRhm[0], cfg.plChuyenKhoa || "Loại I: Rất khỏe");
+                if (selectsRhm[1] && cfg.docRhm) await selectOption(selectsRhm[1], cfg.docRhm);
+            }
         }
 
-        // 3. KẾT LUẬN
-        if (statusEl) statusEl.innerText = '⏳ Đang điền Kết Luận & Phân loại...';
+        // 3. KẾT LUẬN (Z10 & Phân loại 4 mức)
+        if (statusEl) statusEl.innerText = '⏳ Đang điền Kết Luận & Chẩn đoán Z10...';
         await clickSubTab('KẾT LUẬN');
         const paneKL = document.querySelector('.vertical-tabs .ant-tabs-tabpane-active') || document;
 
+        // Checkbox Phân loại sức khỏe (Loại I / II / III / IV)
         const cbsKL = Array.from(paneKL.querySelectorAll('.ant-checkbox-wrapper'));
-        const targetCb = cbsKL.find(c => c.innerText.includes(cfg.plKetLuan) || (cfg.plKetLuan.includes('Loại I:') && c.innerText.includes('Loại I:')) || (cfg.plKetLuan.includes('Loại II') && c.innerText.includes('Loại II')));
+        const targetCb = cbsKL.find(c => {
+            const txt = c.innerText;
+            if (cfg.plKetLuan.includes('Loại I:') && txt.includes('Loại I:')) return true;
+            if (cfg.plKetLuan.includes('Loại II') && txt.includes('Loại II')) return true;
+            if (cfg.plKetLuan.includes('Loại III') && txt.includes('Loại III')) return true;
+            if (cfg.plKetLuan.includes('Loại IV') && txt.includes('Loại IV')) return true;
+            return false;
+        });
+
         if (targetCb && !targetCb.classList.contains('ant-checkbox-wrapper-checked')) {
             targetCb.click();
         }
-        const otherCbs = cbsKL.filter(c => c !== targetCb && (c.innerText.includes('Loại I:') || c.innerText.includes('Loại II') || c.innerText.includes('Loại III') || c.innerText.includes('Loại IV') || c.innerText.includes('Loại V')));
-        otherCbs.forEach(c => {
-            if (c.classList.contains('ant-checkbox-wrapper-checked') && !c.innerText.includes(cfg.plKetLuan)) {
-                c.click();
+        // Bỏ chọn các loại khác
+        cbsKL.forEach(c => {
+            if (c !== targetCb && (c.innerText.includes('Loại I:') || c.innerText.includes('Loại II') || c.innerText.includes('Loại III') || c.innerText.includes('Loại IV') || c.innerText.includes('Loại V'))) {
+                if (c.classList.contains('ant-checkbox-wrapper-checked')) {
+                    c.click();
+                }
             }
         });
 
+        // Điền ô Kết luận bệnh: Z10 (Mặc định)
+        const klbSelect = paneKL.querySelector('nz-select.ant-select-multiple') || 
+                          Array.from(paneKL.querySelectorAll('nz-select')).find(s => {
+                              const parentTxt = s.closest('.ant-form-item, nz-form-item, div.row, div')?.innerText || '';
+                              return parentTxt.includes('Kết luận bệnh');
+                          });
+        if (klbSelect) {
+            const icdTarget = cfg.icdKetLuan || 'Z10';
+            const currentSelected = klbSelect.innerText.trim();
+            if (!currentSelected.includes(icdTarget)) {
+                const topCtrl = klbSelect.querySelector('nz-select-top-control') || klbSelect;
+                topCtrl.click();
+                await delay(120);
+
+                const searchInp = klbSelect.querySelector('.ant-select-selection-search-input');
+                if (searchInp) {
+                    searchInp.focus();
+                    searchInp.value = icdTarget;
+                    searchInp.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+                    searchInp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Z', code: 'KeyZ', bubbles: true }));
+                    searchInp.dispatchEvent(new KeyboardEvent('keyup', { key: 'Z', code: 'KeyZ', bubbles: true }));
+                }
+
+                for (let i = 0; i < 20; i++) {
+                    await delay(90);
+                    const opts = Array.from(document.querySelectorAll('.ant-select-item-option'));
+                    const z10Opt = opts.find(o => o.innerText.includes(icdTarget));
+                    if (z10Opt) {
+                        z10Opt.click();
+                        await delay(150);
+                        break;
+                    }
+                }
+                document.body.click();
+            }
+        }
+
+        // Xác nhận kết thúc khám
         const cbKetThuc = cbsKL.find(c => c.innerText.includes('Xác nhận kết thúc khám') || c.closest('div')?.innerText?.includes('Xác nhận kết thúc khám')) || cbsKL[cbsKL.length - 1];
         if (cbKetThuc && !cbKetThuc.classList.contains('ant-checkbox-wrapper-checked')) {
             cbKetThuc.click();
         }
 
+        // Bác sĩ kết luận
         const selectsKL = Array.from(paneKL.querySelectorAll('nz-select'));
         const docSelectKL = selectsKL[1] || selectsKL[selectsKL.length - 1];
         if (docSelectKL && cfg.docKetLuan) {
             await selectOption(docSelectKL, cfg.docKetLuan);
         }
 
+        // Giờ kết thúc
         const timeInput = paneKL.querySelector('input[placeholder="__:__"]');
         if (timeInput) {
             setAngularValue(timeInput, cfg.gioKetThuc || '07:45');
         }
 
+        // Bấm Lưu (F11)
         if (cfg.autoSave) {
-            if (statusEl) statusEl.innerText = '⏳ Đang bấm Lưu (F11)...';
+            if (statusEl) statusEl.innerText = '⏳ Đang bấm Lưu Khám (F11)...';
             await delay(350);
             const saveBtn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.trim() === 'Lưu' || b.innerText.includes('Lưu (F11)'));
             if (saveBtn) {
                 saveBtn.click();
-                if (statusEl) statusEl.innerText = `✅ ĐÃ ĐIỀN XONG & ĐÃ LƯU (${cfg.theLucRadio}, Cao ${cfg.height}, Nặng ${cfg.weight}, Mạch ${cfg.pulse}, HA ${cfg.bp})!`;
+                for (let i = 0; i < 25; i++) {
+                    await delay(150);
+                    const err = checkHisErrorMessage();
+                    if (err) throw new Error(`HIS báo lỗi: ${err}`);
+                    if (!saveBtn.classList.contains('ant-btn-loading')) break;
+                }
+                await delay(300);
+                const lateErr = checkHisErrorMessage();
+                if (lateErr) throw new Error(`HIS báo lỗi: ${lateErr}`);
+                if (statusEl) statusEl.innerText = `✅ ĐÃ ĐIỀN XONG & ĐÃ LƯU (${cfg.theLucRadio} • Z10 • Cao ${cfg.height} • Nặng ${cfg.weight})!`;
             } else {
                 if (statusEl) statusEl.innerText = '✅ ĐÃ ĐIỀN XONG (Vui lòng bấm Lưu)!';
             }
@@ -454,15 +740,13 @@
     }
 
     // ----------------------------------------------------
-    // 4. QUY TRÌNH LIÊN HOÀN (TIẾP ĐÓN -> KHÁM SỨC KHỎE (F6) -> LƯU)
+    // 4. QUY TRÌNH LIÊN HOÀN (TIẾP ĐÓN ➔ KHÁM (F6) ➔ LƯU)
     // ----------------------------------------------------
     async function runFullWorkflow(statusEl) {
-        const nameInput = document.querySelector('input[name="tenDayDu"]');
-        const expectedPatientName = nameInput ? nameInput.value.trim() : '';
-
-        if (!expectedPatientName) {
+        const patientBanner = getSelectedPatientBanner();
+        if (!patientBanner) {
             if (statusEl) {
-                statusEl.innerText = '⚠️ Vui lòng nhập Họ tên (hoặc quét CCCD) tại Tiếp đón trước khi bấm liên hoàn!';
+                statusEl.innerText = '⚠️ Vui lòng gõ Tên hoặc CCCD vào ô Tìm kiếm HIS trước!';
             }
             return;
         }
@@ -475,18 +759,86 @@
         await saveTiepDon(statusEl);
         await delay(600);
 
-        if (statusEl) statusEl.innerText = '🚀 [3/3] Đang bấm Khám sức khoẻ (F6)...';
+        if (statusEl) statusEl.innerText = '🚀 [3/3] Đang chuyển sang Khám sức khoẻ (F6)...';
         await navigateToKhamSucKhoe(statusEl);
         await delay(500);
 
         await fillKhamTheoBangGiaoDien(statusEl);
 
-        if (statusEl) statusEl.innerText = '🎉 HOÀN TẤT: Tiếp đón ➔ Khám sức khoẻ (F6) ➔ Đã lưu thành công!';
+        if (statusEl) statusEl.innerText = '🎉 HOÀN TẤT: Tiếp đón ➔ Khám sức khoẻ ➔ Đã lưu thành công!';
+    }
+
+    // ----------------------------------------------------
+    // ÁP DỤNG 4 PHÂN LOẠI SỨC KHỎE (KHÔNG HARDCODE MẮT)
+    // ----------------------------------------------------
+    function applyHealthLevel(level) {
+        const lvlStr = String(level);
+        let theLuc = 'Loại 1';
+        let ck = 'Loại I: Rất khỏe';
+
+        if (lvlStr === '1') {
+            theLuc = 'Loại 1';
+            ck = 'Loại I: Rất khỏe';
+        } else if (lvlStr === '2') {
+            theLuc = 'Loại 2';
+            ck = 'Loại II: Khỏe';
+        } else if (lvlStr === '3') {
+            theLuc = 'Loại 3';
+            ck = 'Loại III: Trung bình';
+        } else if (lvlStr === '4') {
+            theLuc = 'Loại 4';
+            ck = 'Loại IV: Yếu';
+        }
+
+        const theLucSelect = document.getElementById('cfg-theluc-pl');
+        if (theLucSelect) theLucSelect.value = theLuc;
+
+        const plCkSelect = document.getElementById('cfg-pl-ck');
+        if (plCkSelect) plCkSelect.value = ck;
+
+        const plKlSelect = document.getElementById('cfg-pl-ketluan');
+        if (plKlSelect) plKlSelect.value = ck;
+
+        // Cập nhật cấu hình nhưng BẢO TOÀN thị lực mắt
+        const cfg = loadConfig();
+        cfg.selectedLevel = lvlStr;
+        cfg.theLucRadio = theLuc;
+        cfg.plChuyenKhoa = ck;
+        cfg.plKetLuan = ck;
+        saveConfig(cfg);
+
+        updateHealthLevelUI(lvlStr);
+    }
+
+    function updateHealthLevelUI(level) {
+        const lvlStr = String(level);
+        for (let i = 1; i <= 4; i++) {
+            const btn = document.getElementById(`btn-level-${i}`);
+            if (btn) {
+                if (String(i) === lvlStr) {
+                    btn.style.borderColor = '#1890ff';
+                    btn.style.backgroundColor = '#e6f7ff';
+                    btn.style.color = '#0050b3';
+                    btn.style.fontWeight = 'bold';
+                    btn.style.boxShadow = '0 0 0 2px rgba(24,144,255,0.2)';
+                } else {
+                    btn.style.borderColor = '#d9d9d9';
+                    btn.style.backgroundColor = '#ffffff';
+                    btn.style.color = '#595959';
+                    btn.style.fontWeight = 'normal';
+                    btn.style.boxShadow = 'none';
+                }
+            }
+        }
     }
 
     function readConfigFromUI() {
+        const currentCfg = loadConfig();
         return {
-            selectedLevel: document.getElementById('cfg-theluc-pl')?.value === 'Loại 1' ? '1' : (document.getElementById('cfg-theluc-pl')?.value === 'Loại 2' ? '2' : 'other'),
+            activeTab: currentCfg.activeTab || 'tiepdon',
+            selectedLevel: currentCfg.selectedLevel || '1',
+            autoPilot: document.getElementById('cfg-auto-pilot')?.checked ?? false,
+
             height: document.getElementById('cfg-height')?.value?.trim() || '150',
             weight: document.getElementById('cfg-weight')?.value?.trim() || '48',
             pulse: document.getElementById('cfg-pulse')?.value?.trim() || '80',
@@ -505,8 +857,8 @@
             docSanPhuKhoa: document.getElementById('cfg-doc-san')?.value?.trim() || '',
             skipSanPhuKhoa: document.getElementById('cfg-skip-san')?.checked ?? true,
 
-            matPhai: document.getElementById('cfg-mat-phai')?.value?.trim() || '6',
-            matTrai: document.getElementById('cfg-mat-trai')?.value?.trim() || '7',
+            matPhai: document.getElementById('cfg-mat-phai')?.value?.trim() || '10',
+            matTrai: document.getElementById('cfg-mat-trai')?.value?.trim() || '10',
             coKinhPhai: document.getElementById('cfg-co-kinh-p')?.value?.trim() || '',
             coKinhTrai: document.getElementById('cfg-co-kinh-t')?.value?.trim() || '',
             docMat: document.getElementById('cfg-doc-mat')?.value?.trim() || '',
@@ -524,6 +876,7 @@
 
             plChuyenKhoa: document.getElementById('cfg-pl-ck')?.value || 'Loại I: Rất khỏe',
             plKetLuan: document.getElementById('cfg-pl-ketluan')?.value || 'Loại I: Rất khỏe',
+            icdKetLuan: document.getElementById('cfg-icd-kl')?.value?.trim() || 'Z10',
             docKetLuan: document.getElementById('cfg-doc-ketluan')?.value?.trim() || '',
             gioKetThuc: document.getElementById('cfg-gio-kt')?.value?.trim() || '07:45',
             autoSave: document.getElementById('cfg-auto-save')?.checked ?? true,
@@ -549,82 +902,15 @@
         };
     }
 
-    function applyCategoryLevel(level) {
-        const isLevel1 = (level === '1' || level === 1);
-        const theLucSelect = document.getElementById('cfg-theluc-pl');
-        if (theLucSelect) theLucSelect.value = isLevel1 ? 'Loại 1' : 'Loại 2';
-
-        const plCkSelect = document.getElementById('cfg-pl-ck');
-        if (plCkSelect) plCkSelect.value = isLevel1 ? 'Loại I: Rất khỏe' : 'Loại II: Khỏe';
-
-        const plKlSelect = document.getElementById('cfg-pl-ketluan');
-        if (plKlSelect) plKlSelect.value = isLevel1 ? 'Loại I: Rất khỏe' : 'Loại II: Khỏe';
-
-        updateQuickPlUI(isLevel1 ? '1' : '2');
-        const updated = readConfigFromUI();
-        saveConfig(updated);
-    }
-
-    function updateQuickPlUI(level) {
-        const btn1 = document.getElementById('btn-quick-pl1');
-        const btn2 = document.getElementById('btn-quick-pl2');
-        const indicator = document.getElementById('pl-indicator');
-        if (level === '1') {
-            if (btn1) {
-                btn1.style.outline = '2px solid #52c41a';
-                btn1.style.background = '#f6ffed';
-                btn1.style.color = '#389e0d';
-            }
-            if (btn2) {
-                btn2.style.outline = 'none';
-                btn2.style.background = '#ffffff';
-                btn2.style.color = '#595959';
-            }
-            if (indicator) {
-                indicator.innerText = '🟢 Loại 1 (Rất khỏe / Tốt)';
-                indicator.style.color = '#389e0d';
-            }
-        } else if (level === '2') {
-            if (btn2) {
-                btn2.style.outline = '2px solid #1890ff';
-                btn2.style.background = '#e6f7ff';
-                btn2.style.color = '#096dd9';
-            }
-            if (btn1) {
-                btn1.style.outline = 'none';
-                btn1.style.background = '#ffffff';
-                btn1.style.color = '#595959';
-            }
-            if (indicator) {
-                indicator.innerText = '🔵 Loại 2 (Khỏe / Khá)';
-                indicator.style.color = '#096dd9';
-            }
-        } else {
-            if (btn1) {
-                btn1.style.outline = 'none';
-                btn1.style.background = '#ffffff';
-                btn1.style.color = '#595959';
-            }
-            if (btn2) {
-                btn2.style.outline = 'none';
-                btn2.style.background = '#ffffff';
-                btn2.style.color = '#595959';
-            }
-            if (indicator) {
-                indicator.innerText = '⚪ Tùy chỉnh khác';
-                indicator.style.color = '#8c8c8c';
-            }
-        }
-    }
-
     let isRunning = false;
-
-    async function executeSafe(actionFn, btnEl, originalText) {
+    async function executeSafe(actionFn, btnEl, originalHtml) {
         if (isRunning) return;
         isRunning = true;
         const statusEl = document.getElementById('his-panel-status');
+        let savedHtml = '';
         if (btnEl) {
             btnEl.disabled = true;
+            savedHtml = originalHtml || btnEl.innerHTML;
             btnEl.innerText = '⏳ Đang xử lý...';
         }
 
@@ -637,52 +923,94 @@
             isRunning = false;
             if (btnEl) {
                 btnEl.disabled = false;
-                btnEl.innerText = originalText;
+                btnEl.innerHTML = savedHtml;
             }
         }
     }
 
-    async function handleSmartRun() {
-        const runBtn = document.getElementById('his-panel-run-btn');
-        await executeSafe(async (statusEl) => {
-            const activeTopTab = document.querySelector('.tab-app-main .ant-tabs-tab-active')?.innerText || '';
-            if (!activeTopTab.includes('Khám sức khỏe')) {
-                const switched = await clickMainTab('Khám sức khỏe định kỳ') || await clickMainTab('Khám sức khỏe');
-                if (!switched) {
-                    await navigateToKhamSucKhoe(statusEl);
-                }
+    // ----------------------------------------------------
+    // 5. BẢNG ĐIỀU KHIỂN GIAO DIỆN TỐI GIẢN (CHỮ TO, 2 MODULE)
+    // ----------------------------------------------------
+    function switchPanelTab(tabName) {
+        const cfg = loadConfig();
+        cfg.activeTab = tabName;
+        saveConfig(cfg);
+
+        const tabBtnTD = document.getElementById('tab-btn-tiepdon');
+        const tabBtnKB = document.getElementById('tab-btn-khambenh');
+        const tabBtnCD = document.getElementById('tab-btn-caidat');
+
+        const secTD = document.getElementById('section-tiepdon');
+        const secKB = document.getElementById('section-khambenh');
+        const secCD = document.getElementById('section-caidat');
+
+        if (tabBtnTD && tabBtnKB && tabBtnCD) {
+            tabBtnTD.style.borderBottom = (tabName === 'tiepdon') ? '3px solid #1890ff' : 'none';
+            tabBtnTD.style.color = (tabName === 'tiepdon') ? '#1890ff' : '#595959';
+            tabBtnTD.style.fontWeight = (tabName === 'tiepdon') ? 'bold' : 'normal';
+
+            tabBtnKB.style.borderBottom = (tabName === 'khambenh') ? '3px solid #1890ff' : 'none';
+            tabBtnKB.style.color = (tabName === 'khambenh') ? '#1890ff' : '#595959';
+            tabBtnKB.style.fontWeight = (tabName === 'khambenh') ? 'bold' : 'normal';
+
+            tabBtnCD.style.borderBottom = (tabName === 'caidat') ? '3px solid #1890ff' : 'none';
+            tabBtnCD.style.color = (tabName === 'caidat') ? '#1890ff' : '#595959';
+            tabBtnCD.style.fontWeight = (tabName === 'caidat') ? 'bold' : 'normal';
+        }
+
+        if (secTD) secTD.style.display = (tabName === 'tiepdon') ? 'block' : 'none';
+        if (secKB) secKB.style.display = (tabName === 'khambenh') ? 'block' : 'none';
+        if (secCD) secCD.style.display = (tabName === 'caidat') ? 'block' : 'none';
+    }
+
+    let lastObservedHisTab = '';
+    function syncContextTab() {
+        const activeTopTab = document.querySelector('.tab-app-main .ant-tabs-tab-active')?.innerText || '';
+        if (activeTopTab && activeTopTab !== lastObservedHisTab) {
+            lastObservedHisTab = activeTopTab;
+            if (activeTopTab.includes('Tiếp đón')) {
+                switchPanelTab('tiepdon');
+            } else if (activeTopTab.includes('Khám sức khỏe') || activeTopTab.includes('Khám bệnh')) {
+                switchPanelTab('khambenh');
             }
-            await fillKhamTheoBangGiaoDien(statusEl);
-        }, runBtn, '🚀 ĐIỀN KẾT QUẢ KHÁM & LƯU (F9)');
+        }
     }
 
-    async function handleSwitchKhamClick() {
-        const btnSwitch = document.getElementById('btn-switch-kham');
-        await executeSafe(async (statusEl) => {
-            await navigateToKhamSucKhoe(statusEl);
-            if (statusEl) statusEl.innerText = '✅ Đã mở màn hình Khám sức khoẻ!';
-        }, btnSwitch, '🩺 2. Mở Khám (F6)');
+    function updatePatientBannerDisplay() {
+        const bannerEl = document.getElementById('his-patient-banner');
+        if (!bannerEl) return;
+
+        const info = getSelectedPatientBanner();
+        if (info) {
+            bannerEl.innerHTML = `🟢 <b>Đang chọn:</b> <span style="color:#0958d9; font-weight: bold;">${escapeHtml(info)}</span>`;
+            bannerEl.style.backgroundColor = '#e6f4ff';
+            bannerEl.style.borderColor = '#91caff';
+            bannerEl.style.color = '#003eb3';
+        } else {
+            bannerEl.innerHTML = `⚠️ <b>Chưa chọn người khám:</b> Hãy gõ Tên hoặc CCCD vào ô Tìm kiếm HIS`;
+            bannerEl.style.backgroundColor = '#fffbe6';
+            bannerEl.style.borderColor = '#ffe58f';
+            bannerEl.style.color = '#d46b08';
+        }
+
+        const genderPreview = document.getElementById('txt-gender-preview');
+        if (genderPreview) {
+            if (cachedPatient.gender === 'Nam') {
+                genderPreview.innerHTML = '<span style="color:#0958d9; font-weight:bold;">Nam</span> (Tự động bỏ qua Sản phụ khoa)';
+            } else if (cachedPatient.gender === 'Nữ') {
+                genderPreview.innerHTML = '<span style="color:#d4380d; font-weight:bold;">Nữ</span> (Điền Sản phụ khoa: Bình thường)';
+            } else {
+                genderPreview.innerText = 'Tự động nhận diện (Nam tự bỏ Sản)';
+            }
+        }
     }
 
-    async function handleFullFlowClick() {
-        const btnFullFlow = document.getElementById('btn-full-flow');
-        await executeSafe(async (statusEl) => {
-            await runFullWorkflow(statusEl);
-        }, btnFullFlow, '🔄 Tiếp Đón ➔ Khám ➔ Lưu');
-    }
-
-    async function handleTiepDonOnlyClick() {
-        const btnTdOnly = document.getElementById('btn-fill-td-only');
-        await executeSafe(async (statusEl) => {
-            await fillTiepDonConfig(statusEl);
-        }, btnTdOnly, '⚡ 1. Điền Tiếp Đón (*)');
-    }
-
-    // ----------------------------------------------------
-    // 5. BẢNG ĐIỀU KHIỂN GIAO DIỆN CHUYÊN NGHIỆP
-    // ----------------------------------------------------
     function mountControlPanel() {
-        if (document.getElementById('his-tool-control-panel')) return;
+        if (document.getElementById('his-tool-control-panel')) {
+            updatePatientBannerDisplay();
+            syncContextTab();
+            return;
+        }
 
         const cfg = loadConfig();
         const texts = cfg.examTexts || defaultExamTexts;
@@ -692,334 +1020,361 @@
         panel.style.position = 'fixed';
         panel.style.bottom = '15px';
         panel.style.right = '15px';
-        panel.style.width = '480px';
+        panel.style.width = '460px';
         panel.style.backgroundColor = '#ffffff';
-        panel.style.borderRadius = '14px';
-        panel.style.boxShadow = '0 14px 40px rgba(0,0,0,0.35)';
+        panel.style.borderRadius = '12px';
+        panel.style.boxShadow = '0 10px 32px rgba(0,0,0,0.18)';
         panel.style.zIndex = '2147483647';
-        panel.style.fontFamily = 'Segoe UI, Tahoma, Geneva, Verdana, sans-serif';
-        panel.style.border = '2px solid #fa8c16';
+        panel.style.fontFamily = 'Segoe UI, Roboto, -apple-system, sans-serif';
+        panel.style.border = '1.5px solid #d9d9d9';
         panel.style.overflow = 'hidden';
 
         panel.innerHTML = `
-            <div style="background: linear-gradient(135deg, #fa8c16, #ff7a45); color: white; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 14.5px; border-bottom: 1px solid rgba(0,0,0,0.1);">
-                <span style="display: flex; align-items: center; gap: 6px;">⚙️ CẤU HÌNH & TỰ ĐỘNG ĐIỀN HIS V20</span>
+            <!-- HEADER TỐI GIẢN CHUẨN Y TẾ -->
+            <div style="background: #fafafa; border-bottom: 1px solid #e8e8e8; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 16px;">🏥</span>
+                    <b style="font-size: 14.5px; color: #1f1f1f; letter-spacing: 0.2px;">HIS V20 - HỖ TRỢ KHÁM SỨC KHỎE</b>
+                </div>
                 <div style="display: flex; align-items: center; gap: 6px;">
-                    <button id="his-panel-reload-btn" title="Nạp lại bảng điều khiển" style="background: rgba(255,255,255,0.25); border: none; color: white; font-size: 13px; cursor: pointer; border-radius: 5px; padding: 3px 8px;">🔄</button>
-                    <button id="his-panel-toggle-btn" style="background: rgba(255,255,255,0.25); border: none; color: white; font-size: 12px; cursor: pointer; border-radius: 5px; padding: 3px 10px; font-weight: bold;">➖ Thu nhỏ</button>
+                    <button id="his-panel-toggle-btn" style="background: transparent; border: 1px solid #d9d9d9; color: #595959; font-size: 12px; cursor: pointer; border-radius: 4px; padding: 2px 8px; font-weight: 600;">➖ Thu nhỏ</button>
                 </div>
             </div>
-            <div id="his-panel-body" style="padding: 14px; font-size: 13px; color: #262626; line-height: 1.45; max-height: 580px; overflow-y: auto;">
+
+            <!-- THANH ĐIỀU HƯỚNG 3 MODULE / TAB -->
+            <div style="display: flex; background: #ffffff; border-bottom: 1px solid #f0f0f0;">
+                <button id="tab-btn-tiepdon" type="button" style="flex: 1; padding: 9px 4px; background: none; border: none; font-size: 13px; cursor: pointer; transition: all 0.2s;">
+                    📋 1. Tiếp Đón
+                </button>
+                <button id="tab-btn-khambenh" type="button" style="flex: 1; padding: 9px 4px; background: none; border: none; font-size: 13px; cursor: pointer; transition: all 0.2s;">
+                    🩺 2. Khám Sức Khỏe
+                </button>
+                <button id="tab-btn-caidat" type="button" style="flex: 1; padding: 9px 4px; background: none; border: none; font-size: 13px; cursor: pointer; transition: all 0.2s;">
+                    ⚙️ Cài Đặt
+                </button>
+            </div>
+
+            <!-- PHẦN THÂN BẢNG ĐIỀU KHIỂN -->
+            <div id="his-panel-body" style="padding: 12px 14px; font-size: 13px; color: #262626; max-height: 580px; overflow-y: auto;">
                 
-                <!-- BỘ CHỌN NHANH PHÂN LOẠI TOÀN DIỆN (LOẠI 1 / LOẠI 2) -->
-                <div style="background: #f0f5ff; border: 1.5px solid #91d5ff; padding: 10px 12px; border-radius: 10px; margin-bottom: 10px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                        <b style="color: #0050b3; font-size: 12.5px;">⭐ CHỌN NHANH PHÂN LOẠI 1 CHẠM:</b>
-                        <span id="pl-indicator" style="font-size: 12.5px; font-weight: bold;"></span>
-                    </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                        <button id="btn-quick-pl1" type="button" style="padding: 8px 6px; border: 1px solid #d9d9d9; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 12.5px; transition: all 0.2s; text-align: center;">
-                            🟢 LOẠI 1 (Rất khỏe / Tốt)
-                            <div style="font-size: 10.5px; font-weight: normal; margin-top: 2px;">Mắt 10/10 • Thể lực tốt</div>
-                        </button>
-                        <button id="btn-quick-pl2" type="button" style="padding: 8px 6px; border: 1px solid #d9d9d9; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 12.5px; transition: all 0.2s; text-align: center;">
-                            🔵 LOẠI 2 (Khỏe / Khá)
-                            <div style="font-size: 10.5px; font-weight: normal; margin-top: 2px;">Mắt 6-7/10 • Cận nhẹ</div>
-                        </button>
-                    </div>
+                <!-- BANNER BỆNH NHÂN HIỆN TẠI TỪ Ô TÌM KIẾM -->
+                <div id="his-patient-banner" style="padding: 8px 10px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 12.5px; margin-bottom: 10px; word-break: break-all;">
+                    Đang nạp thông tin...
                 </div>
 
-                <!-- 1. BẢNG THỂ LỰC -->
-                <div style="background: #f9f0ff; border: 1.5px solid #d3adf7; padding: 10px 12px; border-radius: 10px; margin-bottom: 10px;">
-                    <b style="color: #531dab; font-size: 13px;">🏋️ 1. THỂ LỰC & CHỈ SỐ SINH HIỆU</b>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-top: 8px;">
-                        <div>
-                            <label style="font-size: 11px; font-weight: 600; color: #595959; display: block; margin-bottom: 2px;">Cao (cm):</label>
-                            <input id="cfg-height" type="text" value="${escapeHtml(cfg.height)}" style="width: 100%; height: 32px; padding: 4px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px; font-weight: bold; text-align: center; color: #531dab; box-sizing: border-box;">
-                        </div>
-                        <div>
-                            <label style="font-size: 11px; font-weight: 600; color: #595959; display: block; margin-bottom: 2px;">Nặng (kg):</label>
-                            <input id="cfg-weight" type="text" value="${escapeHtml(cfg.weight)}" style="width: 100%; height: 32px; padding: 4px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px; font-weight: bold; text-align: center; color: #531dab; box-sizing: border-box;">
-                        </div>
-                        <div>
-                            <label style="font-size: 11px; font-weight: 600; color: #595959; display: block; margin-bottom: 2px;">Mạch (l/p):</label>
-                            <input id="cfg-pulse" type="text" value="${escapeHtml(cfg.pulse)}" style="width: 100%; height: 32px; padding: 4px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px; font-weight: bold; text-align: center; color: #cf1322; box-sizing: border-box;">
-                        </div>
-                        <div>
-                            <label style="font-size: 11px; font-weight: 600; color: #595959; display: block; margin-bottom: 2px;">Huyết áp:</label>
-                            <input id="cfg-bp" type="text" value="${escapeHtml(cfg.bp)}" style="width: 100%; height: 32px; padding: 4px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px; font-weight: bold; text-align: center; color: #cf1322; box-sizing: border-box;">
+                <!-- ============================================== -->
+                <!-- MODULE 1: TIẾP ĐÓN KHÁM SỨC KHỎE               -->
+                <!-- ============================================== -->
+                <div id="section-tiepdon">
+                    <div style="background: #fcfcfc; border: 1px solid #ebebeb; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;">
+                        <div style="font-size: 12.5px; color: #595959; margin-bottom: 6px;">
+                            💡 <b>Quy trình tiếp đón từ phiếu giấy:</b><br>
+                            1. Gõ Tên hoặc số CCCD vào ô Tìm kiếm phía trên của HIS.<br>
+                            2. Bấm nút dưới để tiện ích tự động khớp nhóm tuổi và lưu.
                         </div>
                     </div>
-                    <div style="margin-top: 8px; display: flex; align-items: center; justify-content: space-between;">
-                        <span style="font-size: 12px; font-weight: 600; color: #595959;">Phân loại thể lực:</span>
-                        <select id="cfg-theluc-pl" style="height: 30px; padding: 2px 10px; border-radius: 6px; border: 1px solid #d9d9d9; font-weight: bold; font-size: 12.5px; color: #531dab;">
-                            <option value="Loại 1" ${cfg.theLucRadio === 'Loại 1' ? 'selected' : ''}>Loại 1 (Tốt)</option>
-                            <option value="Loại 2" ${cfg.theLucRadio === 'Loại 2' ? 'selected' : ''}>Loại 2 (Khá)</option>
-                            <option value="Loại 3" ${cfg.theLucRadio === 'Loại 3' ? 'selected' : ''}>Loại 3 (Trung bình)</option>
-                            <option value="Loại 4" ${cfg.theLucRadio === 'Loại 4' ? 'selected' : ''}>Loại 4 (Yếu)</option>
-                        </select>
-                    </div>
+
+                    <button id="btn-td-and-kham" type="button" style="width: 100%; padding: 12px 10px; background: #1890ff; color: #ffffff; border: none; border-radius: 8px; font-size: 14.5px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 8px rgba(24,144,255,0.3); margin-bottom: 8px;">
+                        🚀 TIẾP ĐÓN ➔ SANG KHÁM SỨC KHỎE (F6)
+                        <div style="font-size: 11px; font-weight: normal; opacity: 0.9; margin-top: 2px;">Điền mục bắt buộc (*), bấm Lưu (F11) và mở màn hình Khám Sức Khỏe</div>
+                    </button>
+
+                    <button id="btn-fill-td-only" type="button" style="width: 100%; padding: 8px 8px; background: #ffffff; color: #262626; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 12.5px; font-weight: 600; cursor: pointer; margin-bottom: 4px;">
+                        ⚡ Chỉ Điền Tiếp Đón (*) (Chưa sang Khám Sức Khỏe)
+                    </button>
                 </div>
 
-                <!-- 2. BẢNG 7 CHUYÊN KHOA LÂM SÀNG -->
-                <div style="background: #f6ffed; border: 1.5px solid #b7eb8f; padding: 10px 12px; border-radius: 10px; margin-bottom: 10px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                        <b style="color: #237804; font-size: 13px;">🩺 2. KHÁM LÂM SÀNG (7 CHUYÊN KHOA)</b>
-                        <div>
-                            <span style="font-size: 11px; color: #595959; font-weight: 600;">Phân loại CK:</span>
-                            <select id="cfg-pl-ck" style="height: 28px; padding: 2px 6px; font-size: 11.5px; border-radius: 5px; border: 1px solid #d9d9d9; font-weight: bold;">
+                <!-- ============================================== -->
+                <!-- MODULE 2: KHÁM SỨC KHỎE                        -->
+                <!-- ============================================== -->
+                <div id="section-khambenh" style="display: none;">
+                    <!-- BỘ CHỌN 4 PHÂN LOẠI SỨC KHỎE TO RÕ -->
+                    <div style="margin-bottom: 10px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <span style="font-weight: 600; font-size: 12.5px; color: #262626;">Phân loại sức khỏe (1 chạm):</span>
+                            <span style="font-size: 11px; color: #8c8c8c;">Không ghi đè thị lực mắt</span>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;">
+                            <button id="btn-level-1" type="button" style="padding: 7px 2px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 12px; cursor: pointer; text-align: center; background: #ffffff;">
+                                🟢 <b>Loại 1</b><br><span style="font-size: 10px;">Rất khỏe</span>
+                            </button>
+                            <button id="btn-level-2" type="button" style="padding: 7px 2px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 12px; cursor: pointer; text-align: center; background: #ffffff;">
+                                🔵 <b>Loại 2</b><br><span style="font-size: 10px;">Khỏe</span>
+                            </button>
+                            <button id="btn-level-3" type="button" style="padding: 7px 2px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 12px; cursor: pointer; text-align: center; background: #ffffff;">
+                                🟡 <b>Loại 3</b><br><span style="font-size: 10px;">T.bình</span>
+                            </button>
+                            <button id="btn-level-4" type="button" style="padding: 7px 2px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 12px; cursor: pointer; text-align: center; background: #ffffff;">
+                                🟠 <b>Loại 4</b><br><span style="font-size: 10px;">Yếu</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- THÔNG TIN KẾT LUẬN & CHẨN ĐOÁN MẶC ĐỊNH -->
+                    <div style="background: #fafafa; border: 1px solid #f0f0f0; border-radius: 6px; padding: 8px 10px; margin-bottom: 10px; font-size: 12px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                            <span>Chẩn đoán KL:</span>
+                            <b style="color: #0050b3;">Z10 (Khám SK định kỳ)</b>
+                        </div>
+                        <div style="display: flex; justify-content: space-between;">
+                            <span>Giới tính:</span>
+                            <span id="txt-gender-preview" style="font-weight: 600; color: #595959;">Tự động nhận diện (Nam tự bỏ Sản)</span>
+                        </div>
+                    </div>
+
+                    <!-- NÚT CHÍNH ĐIỀN KHÁM SIÊU TỐC -->
+                    <button id="his-panel-run-btn" type="button" style="width: 100%; padding: 13px 10px; background: #52c41a; color: white; border: none; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 8px rgba(82,196,26,0.35); margin-bottom: 8px;">
+                        🚀 ĐIỀN KHÁM SỨC KHỎE & LƯU (F9)
+                        <div style="font-size: 11px; font-weight: normal; opacity: 0.95; margin-top: 2px;">Tự điền Thể lực, 7 Chuyên khoa, Chẩn đoán Z10 & bấm Lưu</div>
+                    </button>
+
+                    <button id="btn-switch-kham" type="button" style="width: 100%; padding: 8px 8px; background: #ffffff; color: #262626; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 12.5px; font-weight: 600; cursor: pointer;">
+                        🩺 Mở màn hình Khám Sức Khỏe (F6)
+                    </button>
+                </div>
+
+                <!-- ============================================== -->
+                <!-- MODULE 3: CÀI ĐẶT & TÙY CHỈNH THÔNG SỐ SÂU     -->
+                <!-- ============================================== -->
+                <div id="section-caidat" style="display: none;">
+                    
+                    <!-- THỂ LỰC & CHỈ SỐ -->
+                    <div style="margin-bottom: 12px; border-bottom: 1px solid #f0f0f0; padding-bottom: 10px;">
+                        <b style="font-size: 13px; color: #262626;">1. Chỉ số thể lực & Sinh hiệu:</b>
+                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 6px;">
+                            <div>
+                                <label style="font-size: 11px; color: #595959; display: block;">Cao (cm):</label>
+                                <input id="cfg-height" type="text" value="${escapeHtml(cfg.height)}" style="width: 100%; height: 30px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; box-sizing: border-box;">
+                            </div>
+                            <div>
+                                <label style="font-size: 11px; color: #595959; display: block;">Nặng (kg):</label>
+                                <input id="cfg-weight" type="text" value="${escapeHtml(cfg.weight)}" style="width: 100%; height: 30px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; box-sizing: border-box;">
+                            </div>
+                            <div>
+                                <label style="font-size: 11px; color: #595959; display: block;">Mạch (l/p):</label>
+                                <input id="cfg-pulse" type="text" value="${escapeHtml(cfg.pulse)}" style="width: 100%; height: 30px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; box-sizing: border-box;">
+                            </div>
+                            <div>
+                                <label style="font-size: 11px; color: #595959; display: block;">Huyết áp:</label>
+                                <input id="cfg-bp" type="text" value="${escapeHtml(cfg.bp)}" style="width: 100%; height: 30px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; box-sizing: border-box;">
+                            </div>
+                        </div>
+                        <div style="margin-top: 6px; display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 11.5px; color: #595959;">Phân loại thể lực:</span>
+                            <select id="cfg-theluc-pl" style="height: 28px; padding: 2px 8px; border-radius: 4px; border: 1px solid #d9d9d9; font-weight: 600; font-size: 12px;">
+                                <option value="Loại 1" ${cfg.theLucRadio === 'Loại 1' ? 'selected' : ''}>Loại 1 (Tốt)</option>
+                                <option value="Loại 2" ${cfg.theLucRadio === 'Loại 2' ? 'selected' : ''}>Loại 2 (Khá)</option>
+                                <option value="Loại 3" ${cfg.theLucRadio === 'Loại 3' ? 'selected' : ''}>Loại 3 (Trung bình)</option>
+                                <option value="Loại 4" ${cfg.theLucRadio === 'Loại 4' ? 'selected' : ''}>Loại 4 (Yếu)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- THỊ LỰC MẮT ĐỘC LẬP (KHÔNG BỊ GHI ĐÈ) -->
+                    <div style="margin-bottom: 12px; border-bottom: 1px solid #f0f0f0; padding-bottom: 10px;">
+                        <b style="font-size: 13px; color: #262626;">2. Thị lực mắt (Cấu hình độc lập):</b>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px;">
+                            <div>
+                                <label style="font-size: 11px; color: #595959; display: block;">Mắt Phải (không kính):</label>
+                                <input id="cfg-mat-phai" type="text" value="${escapeHtml(cfg.matPhai)}" style="width: 100%; height: 28px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; box-sizing: border-box;">
+                            </div>
+                            <div>
+                                <label style="font-size: 11px; color: #595959; display: block;">Mắt Trái (không kính):</label>
+                                <input id="cfg-mat-trai" type="text" value="${escapeHtml(cfg.matTrai)}" style="width: 100%; height: 28px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; box-sizing: border-box;">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 7 CHUYÊN KHOA & BÁC SĨ -->
+                    <div style="margin-bottom: 12px; border-bottom: 1px solid #f0f0f0; padding-bottom: 10px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <b style="font-size: 13px; color: #262626;">3. Bác sĩ 7 Chuyên khoa:</b>
+                            <select id="cfg-pl-ck" style="height: 26px; font-size: 11.5px; border-radius: 4px; border: 1px solid #d9d9d9;">
                                 <option value="Loại I: Rất khỏe" ${cfg.plChuyenKhoa.includes('Loại I:') ? 'selected' : ''}>Loại I: Rất khỏe</option>
                                 <option value="Loại II: Khỏe" ${cfg.plChuyenKhoa.includes('Loại II') ? 'selected' : ''}>Loại II: Khỏe</option>
                                 <option value="Loại III: Trung bình" ${cfg.plChuyenKhoa.includes('Loại III') ? 'selected' : ''}>Loại III: Trung bình</option>
+                                <option value="Loại IV: Yếu" ${cfg.plChuyenKhoa.includes('Loại IV') ? 'selected' : ''}>Loại IV: Yếu</option>
                             </select>
+                        </div>
+
+                        <table style="width: 100%; font-size: 12px; border-collapse: collapse;">
+                            <tr style="background: #fafafa; color: #595959;">
+                                <th style="padding: 4px 6px; border: 1px solid #f0f0f0; text-align: left;">Chuyên khoa</th>
+                                <th style="padding: 4px 6px; border: 1px solid #f0f0f0; text-align: center; width: 75px;">Mã BS</th>
+                                <th style="padding: 4px 6px; border: 1px solid #f0f0f0; text-align: center; width: 60px;">Bỏ qua</th>
+                            </tr>
+                            <tr>
+                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0;">Nội khoa</td>
+                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-doc-noi" type="text" value="${escapeHtml(cfg.docNoiKhoa)}" style="width: 65px; height: 24px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;"></td>
+                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-skip-noi" type="checkbox" ${cfg.skipNoiKhoa ? 'checked' : ''}></td>
+                            </tr>
+                            <tr style="background: #fcfcfc;">
+                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0;">Ngoại khoa</td>
+                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-doc-ngoai" type="text" value="${escapeHtml(cfg.docNgoaiKhoa)}" style="width: 65px; height: 24px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;"></td>
+                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-skip-ngoai" type="checkbox" ${cfg.skipNgoaiKhoa ? 'checked' : ''}></td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0;">Da liễu</td>
+                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-doc-dalieu" type="text" value="${escapeHtml(cfg.docDaLieu)}" style="width: 65px; height: 24px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;"></td>
+                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-skip-dalieu" type="checkbox" ${cfg.skipDaLieu ? 'checked' : ''}></td>
+                            </tr>
+                            <tr style="background: #fcfcfc;">
+                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0;">Sản phụ khoa (Nữ)</td>
+                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-doc-san" type="text" value="${escapeHtml(cfg.docSanPhuKhoa)}" style="width: 65px; height: 24px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px;"></td>
+                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-skip-san" type="checkbox" ${cfg.skipSanPhuKhoa ? 'checked' : ''} title="Nam sẽ tự động bỏ qua"></td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0;">Mắt</td>
+                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-doc-mat" type="text" value="${escapeHtml(cfg.docMat)}" style="width: 65px; height: 24px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;"></td>
+                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-skip-mat" type="checkbox" ${cfg.skipMat ? 'checked' : ''}></td>
+                            </tr>
+                            <tr style="background: #fcfcfc;">
+                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0;">Tai Mũi Họng</td>
+                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-doc-tmh" type="text" value="${escapeHtml(cfg.docTmh)}" style="width: 65px; height: 24px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;"></td>
+                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-skip-tmh" type="checkbox" ${cfg.skipTmh ? 'checked' : ''}></td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0;">Răng Hàm Mặt</td>
+                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-doc-rhm" type="text" value="${escapeHtml(cfg.docRhm)}" style="width: 65px; height: 24px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;"></td>
+                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-skip-rhm" type="checkbox" ${cfg.skipRhm ? 'checked' : ''}></td>
+                            </tr>
+                        </table>
+                    </div>
+
+                    <!-- KẾT LUẬN & CHẨN ĐOÁN Z10 -->
+                    <div style="margin-bottom: 12px; border-bottom: 1px solid #f0f0f0; padding-bottom: 10px;">
+                        <b style="font-size: 13px; color: #262626;">4. Kết luận & Chẩn đoán:</b>
+                        <div style="display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 6px; margin-top: 6px;">
+                            <div>
+                                <label style="font-size: 11px; color: #595959; display: block;">Phân loại KSK:</label>
+                                <select id="cfg-pl-ketluan" style="width: 100%; height: 30px; font-size: 11.5px; border-radius: 4px; border: 1px solid #d9d9d9; font-weight: 600;">
+                                    <option value="Loại I: Rất khỏe" ${cfg.plKetLuan.includes('Loại I:') ? 'selected' : ''}>Loại I: Rất khỏe</option>
+                                    <option value="Loại II: Khỏe" ${cfg.plKetLuan.includes('Loại II') ? 'selected' : ''}>Loại II: Khỏe</option>
+                                    <option value="Loại III: Trung bình" ${cfg.plKetLuan.includes('Loại III') ? 'selected' : ''}>Loại III: Trung bình</option>
+                                    <option value="Loại IV: Yếu" ${cfg.plKetLuan.includes('Loại IV') ? 'selected' : ''}>Loại IV: Yếu</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="font-size: 11px; color: #595959; display: block;">Mã bệnh KL:</label>
+                                <input id="cfg-icd-kl" type="text" value="${escapeHtml(cfg.icdKetLuan || 'Z10')}" placeholder="Z10" style="width: 100%; height: 30px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; box-sizing: border-box;">
+                            </div>
+                            <div>
+                                <label style="font-size: 11px; color: #595959; display: block;">BS Kết luận:</label>
+                                <input id="cfg-doc-ketluan" type="text" value="${escapeHtml(cfg.docKetLuan)}" placeholder="Mã BS" style="width: 100%; height: 30px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; box-sizing: border-box;">
+                            </div>
+                        </div>
+
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+                            <label style="font-size: 12px; color: #262626; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                                <input id="cfg-auto-save" type="checkbox" ${cfg.autoSave ? 'checked' : ''} style="accent-color: #1890ff;">
+                                Tự động bấm Lưu (F11)
+                            </label>
+                            <div style="font-size: 12px; display: flex; align-items: center; gap: 4px;">
+                                <span style="color: #595959;">Giờ KT:</span>
+                                <input id="cfg-gio-kt" type="text" value="${escapeHtml(cfg.gioKetThuc)}" style="width: 60px; height: 26px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold;">
+                            </div>
                         </div>
                     </div>
 
-                    <!-- CHÚ THÍCH HƯỚNG DẪN CHO Y BÁC SỸ -->
-                    <div style="background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 6px; padding: 6px 10px; margin-bottom: 8px; font-size: 11.5px; color: #0050b3; line-height: 1.4;">
-                        💡 <b>Hướng dẫn cho Y Bác sỹ:</b><br>
-                        • Nhập <b>Mã/Tên BS</b> phụ trách từng chuyên khoa để tự động điền.<br>
-                        • Tích vào ô <b style="color: #cf1322;">[☑ Bỏ qua]</b> nếu bệnh nhân không khám hoặc phòng khám không có chuyên khoa đó.
-                    </div>
-
-                    <table style="width: 100%; font-size: 12px; border-collapse: collapse;">
-                        <tr style="background: #e6f7ff; color: #0050b3; font-size: 11.5px; text-align: left;">
-                            <th style="padding: 6px 6px; border: 1px solid #d9d9d9;">Chuyên khoa</th>
-                            <th style="padding: 6px 6px; border: 1px solid #d9d9d9; text-align: center; width: 85px;">Mã/Tên BS</th>
-                            <th style="padding: 6px 6px; border: 1px solid #d9d9d9; text-align: center; width: 65px;">☑ Bỏ qua</th>
-                        </tr>
-                        <!-- 1. Nội khoa -->
-                        <tr>
-                            <td style="padding: 5px 6px; border: 1px solid #f0f0f0;"><b>1. Nội khoa</b> (8 khoa con)</td>
-                            <td style="padding: 5px 6px; border: 1px solid #f0f0f0; text-align: center;">
-                                <input id="cfg-doc-noi" type="text" value="${escapeHtml(cfg.docNoiKhoa)}" placeholder="Mã BS" style="width: 75px; height: 28px; padding: 2px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; font-size: 12.5px; box-sizing: border-box;">
-                            </td>
-                            <td style="padding: 5px 6px; border: 1px solid #f0f0f0; text-align: center;">
-                                <input id="cfg-skip-noi" type="checkbox" ${cfg.skipNoiKhoa ? 'checked' : ''} title="Tích chọn để BỎ QUA khoa Nội" style="width: 20px; height: 20px; cursor: pointer; accent-color: #cf1322; vertical-align: middle;">
-                            </td>
-                        </tr>
-                        <!-- 2. Ngoại khoa -->
-                        <tr style="background: #fafafa;">
-                            <td style="padding: 5px 6px; border: 1px solid #f0f0f0;"><b>2. Ngoại khoa</b></td>
-                            <td style="padding: 5px 6px; border: 1px solid #f0f0f0; text-align: center;">
-                                <input id="cfg-doc-ngoai" type="text" value="${escapeHtml(cfg.docNgoaiKhoa)}" placeholder="Mã BS" style="width: 75px; height: 28px; padding: 2px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; font-size: 12.5px; box-sizing: border-box;">
-                            </td>
-                            <td style="padding: 5px 6px; border: 1px solid #f0f0f0; text-align: center;">
-                                <input id="cfg-skip-ngoai" type="checkbox" ${cfg.skipNgoaiKhoa ? 'checked' : ''} title="Tích chọn để BỎ QUA khoa Ngoại" style="width: 20px; height: 20px; cursor: pointer; accent-color: #cf1322; vertical-align: middle;">
-                            </td>
-                        </tr>
-                        <!-- 3. Da liễu -->
-                        <tr>
-                            <td style="padding: 5px 6px; border: 1px solid #f0f0f0;"><b>3. Da liễu</b></td>
-                            <td style="padding: 5px 6px; border: 1px solid #f0f0f0; text-align: center;">
-                                <input id="cfg-doc-dalieu" type="text" value="${escapeHtml(cfg.docDaLieu)}" placeholder="Mã BS" style="width: 75px; height: 28px; padding: 2px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; font-size: 12.5px; box-sizing: border-box;">
-                            </td>
-                            <td style="padding: 5px 6px; border: 1px solid #f0f0f0; text-align: center;">
-                                <input id="cfg-skip-dalieu" type="checkbox" ${cfg.skipDaLieu ? 'checked' : ''} title="Tích chọn để BỎ QUA khoa Da liễu" style="width: 20px; height: 20px; cursor: pointer; accent-color: #cf1322; vertical-align: middle;">
-                            </td>
-                        </tr>
-                        <!-- 4. Sản phụ khoa -->
-                        <tr style="background: #fff1f0;">
-                            <td style="padding: 5px 6px; border: 1px solid #f0f0f0; color: #cf1322;"><b>4. Sản phụ khoa</b> (Nữ)</td>
-                            <td style="padding: 5px 6px; border: 1px solid #f0f0f0; text-align: center;">
-                                <input id="cfg-doc-san" type="text" value="${escapeHtml(cfg.docSanPhuKhoa)}" placeholder="Trống" style="width: 75px; height: 28px; padding: 2px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 12.5px; box-sizing: border-box;">
-                            </td>
-                            <td style="padding: 5px 6px; border: 1px solid #f0f0f0; text-align: center;">
-                                <input id="cfg-skip-san" type="checkbox" ${cfg.skipSanPhuKhoa ? 'checked' : ''} title="Tích chọn để BỎ QUA Sản phụ khoa (nếu là Nam hoặc không khám)" style="width: 20px; height: 20px; cursor: pointer; accent-color: #cf1322; vertical-align: middle;">
-                            </td>
-                        </tr>
-                        <!-- 5. Mắt -->
-                        <tr>
-                            <td style="padding: 5px 6px; border: 1px solid #f0f0f0;">
-                                <b>5. Mắt</b><br>
-                                <span style="font-size: 11px; color: #595959;">K.kính: Phải <input id="cfg-mat-phai" type="text" value="${escapeHtml(cfg.matPhai)}" style="width: 28px; height: 22px; text-align: center; padding: 1px; font-weight: bold; border: 1px solid #d9d9d9; border-radius: 3px;"> Trái <input id="cfg-mat-trai" type="text" value="${escapeHtml(cfg.matTrai)}" style="width: 28px; height: 22px; text-align: center; padding: 1px; font-weight: bold; border: 1px solid #d9d9d9; border-radius: 3px;"></span>
-                            </td>
-                            <td style="padding: 5px 6px; border: 1px solid #f0f0f0; text-align: center;">
-                                <input id="cfg-doc-mat" type="text" value="${escapeHtml(cfg.docMat)}" placeholder="Mã BS" style="width: 75px; height: 28px; padding: 2px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; font-size: 12.5px; box-sizing: border-box;">
-                            </td>
-                            <td style="padding: 5px 6px; border: 1px solid #f0f0f0; text-align: center;">
-                                <input id="cfg-skip-mat" type="checkbox" ${cfg.skipMat ? 'checked' : ''} title="Tích chọn để BỎ QUA khoa Mắt" style="width: 20px; height: 20px; cursor: pointer; accent-color: #cf1322; vertical-align: middle;">
-                            </td>
-                        </tr>
-                        <!-- 6. Tai - Mũi - Họng -->
-                        <tr style="background: #fafafa;">
-                            <td style="padding: 5px 6px; border: 1px solid #f0f0f0;">
-                                <b>6. Tai - Mũi - Họng</b><br>
-                                <span style="font-size: 11px; color: #595959;">Thính lực: P 5/0.5m | T 5/0.5m</span>
-                            </td>
-                            <td style="padding: 5px 6px; border: 1px solid #f0f0f0; text-align: center;">
-                                <input id="cfg-doc-tmh" type="text" value="${escapeHtml(cfg.docTmh)}" placeholder="Mã BS" style="width: 75px; height: 28px; padding: 2px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; font-size: 12.5px; box-sizing: border-box;">
-                            </td>
-                            <td style="padding: 5px 6px; border: 1px solid #f0f0f0; text-align: center;">
-                                <input id="cfg-skip-tmh" type="checkbox" ${cfg.skipTmh ? 'checked' : ''} title="Tích chọn để BỎ QUA khoa Tai Mũi Họng" style="width: 20px; height: 20px; cursor: pointer; accent-color: #cf1322; vertical-align: middle;">
-                            </td>
-                        </tr>
-                        <!-- 7. Răng - Hàm - Mặt -->
-                        <tr>
-                            <td style="padding: 5px 6px; border: 1px solid #f0f0f0;"><b>7. Răng - Hàm - Mặt</b></td>
-                            <td style="padding: 5px 6px; border: 1px solid #f0f0f0; text-align: center;">
-                                <input id="cfg-doc-rhm" type="text" value="${escapeHtml(cfg.docRhm)}" placeholder="Mã BS" style="width: 75px; height: 28px; padding: 2px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; font-size: 12.5px; box-sizing: border-box;">
-                            </td>
-                            <td style="padding: 5px 6px; border: 1px solid #f0f0f0; text-align: center;">
-                                <input id="cfg-skip-rhm" type="checkbox" ${cfg.skipRhm ? 'checked' : ''} title="Tích chọn để BỎ QUA khoa Răng Hàm Mặt" style="width: 20px; height: 20px; cursor: pointer; accent-color: #cf1322; vertical-align: middle;">
-                            </td>
-                        </tr>
-                    </table>
-
-                    <!-- TÙY CHỈNH 16 NỘI DUNG KHÁM MẪU -->
-                    <details id="details-exam-texts" style="margin-top: 8px; background: #ffffff; border: 1.5px dashed #52c41a; border-radius: 8px; padding: 8px;">
-                        <summary style="font-weight: bold; color: #237804; cursor: pointer; font-size: 12px; user-select: none;">
-                            📝 Tùy chỉnh 16 Nội dung khám lâm sàng chi tiết (Bấm để xem/sửa)
+                    <!-- 16 NỘI DUNG KHÁM MẪU (ACCORDION THU GỌN) -->
+                    <details style="margin-bottom: 10px; border: 1px dashed #d9d9d9; border-radius: 6px; padding: 6px 10px;">
+                        <summary style="font-size: 12px; font-weight: 600; color: #1890ff; cursor: pointer;">
+                            📝 16 Nội dung khám mẫu (Bấm để xem/sửa)
                         </summary>
-                        <div style="margin-top: 8px; max-height: 220px; overflow-y: auto; font-size: 11px; display: flex; flex-direction: column; gap: 6px;">
-                            <div>
-                                <span style="color: #595959; font-weight: 600;">Tuần hoàn:</span>
-                                <input id="cfg-txt-tuanhoan" type="text" value="${escapeHtml(texts.tuanHoan)}" style="width: 100%; height: 28px; padding: 2px 6px; font-size: 11.5px; border: 1px solid #d9d9d9; border-radius: 4px; box-sizing: border-box;">
-                            </div>
-                            <div>
-                                <span style="color: #595959; font-weight: 600;">Hô hấp:</span>
-                                <input id="cfg-txt-hohap" type="text" value="${escapeHtml(texts.hoHap)}" style="width: 100%; height: 28px; padding: 2px 6px; font-size: 11.5px; border: 1px solid #d9d9d9; border-radius: 4px; box-sizing: border-box;">
-                            </div>
-                            <div>
-                                <span style="color: #595959; font-weight: 600;">Tiêu hóa:</span>
-                                <input id="cfg-txt-tieuhoa" type="text" value="${escapeHtml(texts.tieuHoa)}" style="width: 100%; height: 28px; padding: 2px 6px; font-size: 11.5px; border: 1px solid #d9d9d9; border-radius: 4px; box-sizing: border-box;">
-                            </div>
-                            <div>
-                                <span style="color: #595959; font-weight: 600;">Thận - Tiết niệu:</span>
-                                <input id="cfg-txt-thantn" type="text" value="${escapeHtml(texts.thanTietNieu)}" style="width: 100%; height: 28px; padding: 2px 6px; font-size: 11.5px; border: 1px solid #d9d9d9; border-radius: 4px; box-sizing: border-box;">
-                            </div>
-                            <div>
-                                <span style="color: #595959; font-weight: 600;">Nội tiết:</span>
-                                <input id="cfg-txt-noitiet" type="text" value="${escapeHtml(texts.noiTiet)}" style="width: 100%; height: 28px; padding: 2px 6px; font-size: 11.5px; border: 1px solid #d9d9d9; border-radius: 4px; box-sizing: border-box;">
-                            </div>
-                            <div>
-                                <span style="color: #595959; font-weight: 600;">Cơ - Xương - Khớp:</span>
-                                <input id="cfg-txt-coxuongkhop" type="text" value="${escapeHtml(texts.coXuongKhop)}" style="width: 100%; height: 28px; padding: 2px 6px; font-size: 11.5px; border: 1px solid #d9d9d9; border-radius: 4px; box-sizing: border-box;">
-                            </div>
-                            <div>
-                                <span style="color: #595959; font-weight: 600;">Thần kinh:</span>
-                                <input id="cfg-txt-thankinh" type="text" value="${escapeHtml(texts.thanKinh)}" style="width: 100%; height: 28px; padding: 2px 6px; font-size: 11.5px; border: 1px solid #d9d9d9; border-radius: 4px; box-sizing: border-box;">
-                            </div>
-                            <div>
-                                <span style="color: #595959; font-weight: 600;">Tâm thần:</span>
-                                <input id="cfg-txt-tamthan" type="text" value="${escapeHtml(texts.tamThan)}" style="width: 100%; height: 28px; padding: 2px 6px; font-size: 11.5px; border: 1px solid #d9d9d9; border-radius: 4px; box-sizing: border-box;">
-                            </div>
-                            <div>
-                                <span style="color: #595959; font-weight: 600;">Ngoại khoa:</span>
-                                <input id="cfg-txt-ngoaikhoa" type="text" value="${escapeHtml(texts.ngoaiKhoa)}" style="width: 100%; height: 28px; padding: 2px 6px; font-size: 11.5px; border: 1px solid #d9d9d9; border-radius: 4px; box-sizing: border-box;">
-                            </div>
-                            <div>
-                                <span style="color: #595959; font-weight: 600;">Da liễu:</span>
-                                <input id="cfg-txt-dalieu" type="text" value="${escapeHtml(texts.daLieu)}" style="width: 100%; height: 28px; padding: 2px 6px; font-size: 11.5px; border: 1px solid #d9d9d9; border-radius: 4px; box-sizing: border-box;">
-                            </div>
-                            <div>
-                                <span style="color: #595959; font-weight: 600;">Sản phụ khoa:</span>
-                                <input id="cfg-txt-sanphukhoa" type="text" value="${escapeHtml(texts.sanPhuKhoa)}" style="width: 100%; height: 28px; padding: 2px 6px; font-size: 11.5px; border: 1px solid #d9d9d9; border-radius: 4px; box-sizing: border-box;">
-                            </div>
-                            <div>
-                                <span style="color: #595959; font-weight: 600;">Mắt (Bệnh khác):</span>
-                                <input id="cfg-txt-matkhac" type="text" value="${escapeHtml(texts.matKhac)}" style="width: 100%; height: 28px; padding: 2px 6px; font-size: 11.5px; border: 1px solid #d9d9d9; border-radius: 4px; box-sizing: border-box;">
-                            </div>
-                            <div>
-                                <span style="color: #595959; font-weight: 600;">Tai Mũi Họng (Bệnh khác):</span>
-                                <input id="cfg-txt-tmhkhac" type="text" value="${escapeHtml(texts.tmhKhac)}" style="width: 100%; height: 28px; padding: 2px 6px; font-size: 11.5px; border: 1px solid #d9d9d9; border-radius: 4px; box-sizing: border-box;">
-                            </div>
-                            <div>
-                                <span style="color: #595959; font-weight: 600;">RHM - Hàm trên:</span>
-                                <input id="cfg-txt-rhmhamtren" type="text" value="${escapeHtml(texts.rhmHamTren)}" style="width: 100%; height: 28px; padding: 2px 6px; font-size: 11.5px; border: 1px solid #d9d9d9; border-radius: 4px; box-sizing: border-box;">
-                            </div>
-                            <div>
-                                <span style="color: #595959; font-weight: 600;">RHM - Hàm dưới:</span>
-                                <input id="cfg-txt-rhmhamduoi" type="text" value="${escapeHtml(texts.rhmHamDuoi)}" style="width: 100%; height: 28px; padding: 2px 6px; font-size: 11.5px; border: 1px solid #d9d9d9; border-radius: 4px; box-sizing: border-box;">
-                            </div>
-                            <div>
-                                <span style="color: #595959; font-weight: 600;">Răng Hàm Mặt (Bệnh khác):</span>
-                                <input id="cfg-txt-rhmkhac" type="text" value="${escapeHtml(texts.rhmKhac)}" style="width: 100%; height: 28px; padding: 2px 6px; font-size: 11.5px; border: 1px solid #d9d9d9; border-radius: 4px; box-sizing: border-box;">
-                            </div>
-                            <div style="display: flex; justify-content: flex-end; margin-top: 6px;">
-                                <button id="btn-reset-exam-texts" type="button" style="font-size: 11px; padding: 4px 10px; background: #fafafa; border: 1px solid #d9d9d9; border-radius: 5px; cursor: pointer; font-weight: bold;">🔄 Khôi phục chuẩn</button>
-                            </div>
+                        <div style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px; max-height: 180px; overflow-y: auto;">
+                            <div><span style="font-size: 11px; color: #595959;">Tuần hoàn:</span><input id="cfg-txt-tuanhoan" type="text" value="${escapeHtml(texts.tuanHoan)}" style="width:100%; height:26px; font-size:11.5px; border:1px solid #d9d9d9; border-radius:3px; box-sizing:border-box;"></div>
+                            <div><span style="font-size: 11px; color: #595959;">Hô hấp:</span><input id="cfg-txt-hohap" type="text" value="${escapeHtml(texts.hoHap)}" style="width:100%; height:26px; font-size:11.5px; border:1px solid #d9d9d9; border-radius:3px; box-sizing:border-box;"></div>
+                            <div><span style="font-size: 11px; color: #595959;">Tiêu hóa:</span><input id="cfg-txt-tieuhoa" type="text" value="${escapeHtml(texts.tieuHoa)}" style="width:100%; height:26px; font-size:11.5px; border:1px solid #d9d9d9; border-radius:3px; box-sizing:border-box;"></div>
+                            <div><span style="font-size: 11px; color: #595959;">Thận - Tiết niệu:</span><input id="cfg-txt-thantn" type="text" value="${escapeHtml(texts.thanTietNieu)}" style="width:100%; height:26px; font-size:11.5px; border:1px solid #d9d9d9; border-radius:3px; box-sizing:border-box;"></div>
+                            <div><span style="font-size: 11px; color: #595959;">Nội tiết:</span><input id="cfg-txt-noitiet" type="text" value="${escapeHtml(texts.noiTiet)}" style="width:100%; height:26px; font-size:11.5px; border:1px solid #d9d9d9; border-radius:3px; box-sizing:border-box;"></div>
+                            <div><span style="font-size: 11px; color: #595959;">Cơ - Xương - Khớp:</span><input id="cfg-txt-coxuongkhop" type="text" value="${escapeHtml(texts.coXuongKhop)}" style="width:100%; height:26px; font-size:11.5px; border:1px solid #d9d9d9; border-radius:3px; box-sizing:border-box;"></div>
+                            <div><span style="font-size: 11px; color: #595959;">Thần kinh:</span><input id="cfg-txt-thankinh" type="text" value="${escapeHtml(texts.thanKinh)}" style="width:100%; height:26px; font-size:11.5px; border:1px solid #d9d9d9; border-radius:3px; box-sizing:border-box;"></div>
+                            <div><span style="font-size: 11px; color: #595959;">Tâm thần:</span><input id="cfg-txt-tamthan" type="text" value="${escapeHtml(texts.tamThan)}" style="width:100%; height:26px; font-size:11.5px; border:1px solid #d9d9d9; border-radius:3px; box-sizing:border-box;"></div>
+                            <div><span style="font-size: 11px; color: #595959;">Ngoại khoa:</span><input id="cfg-txt-ngoaikhoa" type="text" value="${escapeHtml(texts.ngoaiKhoa)}" style="width:100%; height:26px; font-size:11.5px; border:1px solid #d9d9d9; border-radius:3px; box-sizing:border-box;"></div>
+                            <div><span style="font-size: 11px; color: #595959;">Da liễu:</span><input id="cfg-txt-dalieu" type="text" value="${escapeHtml(texts.daLieu)}" style="width:100%; height:26px; font-size:11.5px; border:1px solid #d9d9d9; border-radius:3px; box-sizing:border-box;"></div>
+                            <div><span style="font-size: 11px; color: #595959;">Sản phụ khoa:</span><input id="cfg-txt-sanphukhoa" type="text" value="${escapeHtml(texts.sanPhuKhoa)}" style="width:100%; height:26px; font-size:11.5px; border:1px solid #d9d9d9; border-radius:3px; box-sizing:border-box;"></div>
+                            <div><span style="font-size: 11px; color: #595959;">Mắt khác:</span><input id="cfg-txt-matkhac" type="text" value="${escapeHtml(texts.matKhac)}" style="width:100%; height:26px; font-size:11.5px; border:1px solid #d9d9d9; border-radius:3px; box-sizing:border-box;"></div>
+                            <div><span style="font-size: 11px; color: #595959;">Tai Mũi Họng khác:</span><input id="cfg-txt-tmhkhac" type="text" value="${escapeHtml(texts.tmhKhac)}" style="width:100%; height:26px; font-size:11.5px; border:1px solid #d9d9d9; border-radius:3px; box-sizing:border-box;"></div>
+                            <div><span style="font-size: 11px; color: #595959;">RHM - Hàm trên:</span><input id="cfg-txt-rhmhamtren" type="text" value="${escapeHtml(texts.rhmHamTren)}" style="width:100%; height:26px; font-size:11.5px; border:1px solid #d9d9d9; border-radius:3px; box-sizing:border-box;"></div>
+                            <div><span style="font-size: 11px; color: #595959;">RHM - Hàm dưới:</span><input id="cfg-txt-rhmhamduoi" type="text" value="${escapeHtml(texts.rhmHamDuoi)}" style="width:100%; height:26px; font-size:11.5px; border:1px solid #d9d9d9; border-radius:3px; box-sizing:border-box;"></div>
+                            <div><span style="font-size: 11px; color: #595959;">RHM khác:</span><input id="cfg-txt-rhmkhac" type="text" value="${escapeHtml(texts.rhmKhac)}" style="width:100%; height:26px; font-size:11.5px; border:1px solid #d9d9d9; border-radius:3px; box-sizing:border-box;"></div>
                         </div>
                     </details>
-                </div>
 
-                <!-- 3. BẢNG KẾT LUẬN -->
-                <div style="background: #fff7e6; border: 1.5px solid #ffd591; padding: 10px 12px; border-radius: 10px; margin-bottom: 10px;">
-                    <b style="color: #d46b08; font-size: 13px;">📋 3. KẾT LUẬN & HOÀN TẤT HỒ SƠ</b>
-                    <div style="display: grid; grid-template-columns: 1.5fr 1fr 1fr; gap: 8px; margin-top: 8px;">
-                        <div>
-                            <label style="font-size: 11px; font-weight: 600; color: #595959; display: block; margin-bottom: 2px;">Phân loại KSK:</label>
-                            <select id="cfg-pl-ketluan" style="width: 100%; height: 32px; padding: 4px; border-radius: 6px; border: 1px solid #d9d9d9; font-weight: bold; font-size: 12px; box-sizing: border-box;">
-                                <option value="Loại I: Rất khỏe" ${cfg.plKetLuan.includes('Loại I:') ? 'selected' : ''}>Loại I: Rất khỏe</option>
-                                <option value="Loại II: Khỏe" ${cfg.plKetLuan.includes('Loại II') ? 'selected' : ''}>Loại II: Khỏe</option>
-                                <option value="Loại III: Trung bình" ${cfg.plKetLuan.includes('Loại III') ? 'selected' : ''}>Loại III: Trung bình</option>
-                                <option value="Loại IV: Yếu" ${cfg.plKetLuan.includes('Loại IV') ? 'selected' : ''}>Loại IV: Yếu</option>
-                                <option value="Loại V: Rất yếu" ${cfg.plKetLuan.includes('Loại V') ? 'selected' : ''}>Loại V: Rất yếu</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label style="font-size: 11px; font-weight: 600; color: #595959; display: block; margin-bottom: 2px;">BS Kết luận:</label>
-                            <input id="cfg-doc-ketluan" type="text" value="${escapeHtml(cfg.docKetLuan)}" placeholder="Mã BS" style="width: 100%; height: 32px; padding: 4px; border: 1px solid #d9d9d9; border-radius: 6px; font-weight: bold; font-size: 13px; text-align: center; box-sizing: border-box;">
-                        </div>
-                        <div>
-                            <label style="font-size: 11px; font-weight: 600; color: #595959; display: block; margin-bottom: 2px;">Giờ kết thúc:</label>
-                            <input id="cfg-gio-kt" type="text" value="${escapeHtml(cfg.gioKetThuc)}" style="width: 100%; height: 32px; padding: 4px; border: 1px solid #d9d9d9; border-radius: 6px; font-weight: bold; font-size: 13px; text-align: center; box-sizing: border-box;">
-                        </div>
-                    </div>
-                    <div style="margin-top: 10px;">
-                        <label style="font-size: 12.5px; color: #262626; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 8px;">
-                            <input id="cfg-auto-save" type="checkbox" ${cfg.autoSave ? 'checked' : ''} style="width: 20px; height: 20px; cursor: pointer; accent-color: #52c41a;">
-                            Tự động bấm Lưu (F11) sau khi điền kết quả
-                        </label>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+                        <button id="btn-reset-exam-texts" type="button" style="font-size: 11.5px; padding: 4px 10px; background: #fafafa; border: 1px solid #d9d9d9; border-radius: 4px; cursor: pointer;">🔄 Khôi phục nội dung chuẩn</button>
                     </div>
                 </div>
 
-                <!-- 4. NÚT ĐIỀU KHIỂN ĐA TÁC VỤ -->
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
-                    <button id="btn-fill-td-only" style="padding: 10px 6px; background: #fa8c16; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 12.5px; box-shadow: 0 2px 8px rgba(250,140,22,0.35); text-align: center;">
-                        ⚡ 1. Điền Tiếp Đón (*)
-                        <div style="font-size: 10px; font-weight: normal; opacity: 0.9; margin-top: 2px;">Điền tự động thông tin hành chính</div>
-                    </button>
-                    <button id="btn-switch-kham" style="padding: 10px 6px; background: #1890ff; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 12.5px; box-shadow: 0 2px 8px rgba(24,144,255,0.35); text-align: center;">
-                        🩺 2. Mở Khám (F6)
-                        <div style="font-size: 10px; font-weight: normal; opacity: 0.9; margin-top: 2px;">Mở tab Khám sức khỏe định kỳ</div>
-                    </button>
-                </div>
-                <div style="margin-bottom: 8px;">
-                    <button id="btn-full-flow" style="width: 100%; padding: 11px 8px; background: #722ed1; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 3px 10px rgba(114,46,209,0.35); text-align: center;">
-                        🔄 Quy Trình Tự Động: Tiếp Đón ➔ Khám ➔ Lưu
-                        <div style="font-size: 10.5px; font-weight: normal; opacity: 0.9; margin-top: 2px;">Chạy liên hoàn 1 chạm từ Tiếp đón đến Lưu kết quả</div>
-                    </button>
-                </div>
-
-                <button id="his-panel-run-btn" style="width: 100%; padding: 13px 8px; background: #52c41a; color: white; border: none; border-radius: 9px; font-size: 14.5px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 14px rgba(82,196,26,0.45); letter-spacing: 0.3px; text-align: center;">
-                    🚀 ĐIỀN KẾT QUẢ KHÁM & LƯU (F9)
-                    <div style="font-size: 11px; font-weight: normal; opacity: 0.95; margin-top: 3px;">Tự động điền 7 chuyên khoa, thể lực, kết luận & bấm Lưu</div>
-                </button>
-
-                <div id="his-panel-status" style="text-align: center; margin-top: 10px; font-weight: bold; color: #237804; font-size: 12.5px; min-height: 22px;"></div>
+                <!-- DÒNG THÔNG BÁO TRẠNG THÁI -->
+                <div id="his-panel-status" style="text-align: center; margin-top: 10px; font-weight: bold; color: #0958d9; font-size: 12.5px; min-height: 20px;"></div>
             </div>
         `;
 
         document.body.appendChild(panel);
 
-        updateQuickPlUI(cfg.selectedLevel || '1');
+        // Gắn sự kiện chuyển tab
+        document.getElementById('tab-btn-tiepdon').onclick = () => switchPanelTab('tiepdon');
+        document.getElementById('tab-btn-khambenh').onclick = () => switchPanelTab('khambenh');
+        document.getElementById('tab-btn-caidat').onclick = () => switchPanelTab('caidat');
 
-        const btnPl1 = document.getElementById('btn-quick-pl1');
-        if (btnPl1) btnPl1.onclick = () => applyCategoryLevel('1');
+        // Gắn sự kiện 4 nút Loại sức khỏe
+        for (let i = 1; i <= 4; i++) {
+            const btn = document.getElementById(`btn-level-${i}`);
+            if (btn) btn.onclick = () => applyHealthLevel(i);
+        }
 
-        const btnPl2 = document.getElementById('btn-quick-pl2');
-        if (btnPl2) btnPl2.onclick = () => applyCategoryLevel('2');
+        // Khởi tạo trạng thái giao diện ban đầu
+        switchPanelTab(cfg.activeTab || 'tiepdon');
+        updateHealthLevelUI(cfg.selectedLevel || '1');
+        updatePatientBannerDisplay();
 
+        // Gắn sự kiện các nút hành động chính
+        const btnTdAndKham = document.getElementById('btn-td-and-kham');
+        if (btnTdAndKham) {
+            btnTdAndKham.onclick = async () => {
+                await executeSafe(async (statusEl) => {
+                    await fillTiepDonConfig(statusEl);
+                    await delay(300);
+                    await saveTiepDon(statusEl);
+                    await delay(500);
+                    await navigateToKhamSucKhoe(statusEl);
+                    switchPanelTab('khambenh');
+                }, btnTdAndKham, '🚀 TIẾP ĐÓN ➔ SANG KHÁM SỨC KHỎE (F6)');
+            };
+        }
+
+        const btnTdOnly = document.getElementById('btn-fill-td-only');
+        if (btnTdOnly) {
+            btnTdOnly.onclick = async () => {
+                await executeSafe(fillTiepDonConfig, btnTdOnly, '⚡ Chỉ Điền Tiếp Đón (*) (Chưa sang Khám Sức Khỏe)');
+            };
+        }
+
+        const btnRunKham = document.getElementById('his-panel-run-btn');
+        if (btnRunKham) {
+            btnRunKham.onclick = async () => {
+                await executeSafe(fillKhamTheoBangGiaoDien, btnRunKham, '🚀 ĐIỀN KHÁM SỨC KHỎE & LƯU (F9)');
+            };
+        }
+
+        const btnSwitchKham = document.getElementById('btn-switch-kham');
+        if (btnSwitchKham) {
+            btnSwitchKham.onclick = async () => {
+                await executeSafe(navigateToKhamSucKhoe, btnSwitchKham, '🩺 Mở màn hình Khám Sức Khỏe (F6)');
+            };
+        }
+
+        // Lưu config khi thay đổi input trong Cài Đặt
         const inputs = panel.querySelectorAll('input, select');
         inputs.forEach(inp => {
             inp.addEventListener('change', () => {
                 const updated = readConfigFromUI();
                 saveConfig(updated);
-                updateQuickPlUI(updated.selectedLevel);
             });
         });
 
+        // Nút khôi phục nội dung 16 mẫu khám
         const resetBtn = document.getElementById('btn-reset-exam-texts');
         if (resetBtn) {
             resetBtn.onclick = () => {
@@ -1047,6 +1402,7 @@
             };
         }
 
+        // Nút thu nhỏ / mở rộng
         let isCollapsed = false;
         const body = document.getElementById('his-panel-body');
         const toggleBtn = document.getElementById('his-panel-toggle-btn');
@@ -1057,47 +1413,34 @@
                 toggleBtn.innerText = isCollapsed ? '➕ Mở rộng' : '➖ Thu nhỏ';
             };
         }
-
-        const reloadBtn = document.getElementById('his-panel-reload-btn');
-        if (reloadBtn) {
-            reloadBtn.onclick = () => {
-                panel.remove();
-                mountControlPanel();
-            };
-        }
-
-        const btnTdOnly = document.getElementById('btn-fill-td-only');
-        if (btnTdOnly) btnTdOnly.onclick = handleTiepDonOnlyClick;
-
-        const btnSwitchKham = document.getElementById('btn-switch-kham');
-        if (btnSwitchKham) btnSwitchKham.onclick = handleSwitchKhamClick;
-
-        const btnFullFlow = document.getElementById('btn-full-flow');
-        if (btnFullFlow) btnFullFlow.onclick = handleFullFlowClick;
-
-        const runBtn = document.getElementById('his-panel-run-btn');
-        if (runBtn) runBtn.onclick = handleSmartRun;
     }
 
+    // ----------------------------------------------------
+    // LẮNG NGHE PHÍM TẮT TOÀN CỤC (F9 & F6)
+    // ----------------------------------------------------
     if (window._hisKeydownHandler) {
         window.removeEventListener('keydown', window._hisKeydownHandler);
     }
     window._hisKeydownHandler = (e) => {
         if (e.key === 'F9') {
             e.preventDefault();
-            handleSmartRun();
+            const btnRun = document.getElementById('his-panel-run-btn');
+            if (btnRun) btnRun.click();
         } else if (e.key === 'F6') {
             const activeTopTab = document.querySelector('.tab-app-main .ant-tabs-tab-active')?.innerText || '';
             if (activeTopTab.includes('Tiếp đón')) {
-                handleSwitchKhamClick();
+                const btnTdAndKham = document.getElementById('btn-td-and-kham');
+                if (btnTdAndKham) btnTdAndKham.click();
             } else {
                 e.preventDefault();
-                handleSmartRun();
+                const btnRun = document.getElementById('his-panel-run-btn');
+                if (btnRun) btnRun.click();
             }
         }
     };
     window.addEventListener('keydown', window._hisKeydownHandler);
 
+    // Gắn panel và duy trì trạng thái
     mountControlPanel();
     if (window._hisAutoRemountTimer) clearInterval(window._hisAutoRemountTimer);
     window._hisAutoRemountTimer = setInterval(mountControlPanel, 1500);
