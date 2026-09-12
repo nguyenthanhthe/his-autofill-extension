@@ -703,7 +703,7 @@
 
         panel.innerHTML = `
             <div style="background: linear-gradient(135deg, #fa8c16, #ff7a45); color: white; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 14.5px; border-bottom: 1px solid rgba(0,0,0,0.1);">
-                <span style="display: flex; align-items: center; gap: 6px;">⚙️ CẤU HÌNH & TỰ ĐỘNG ĐIỀN HIS V2</span>
+                <span style="display: flex; align-items: center; gap: 6px;">⚙️ CẤU HÌNH & TỰ ĐỘNG ĐIỀN HIS V20</span>
                 <div style="display: flex; align-items: center; gap: 6px;">
                     <button id="his-panel-reload-btn" title="Nạp lại bảng điều khiển" style="background: rgba(255,255,255,0.25); border: none; color: white; font-size: 13px; cursor: pointer; border-radius: 5px; padding: 3px 8px;">🔄</button>
                     <button id="his-panel-toggle-btn" style="background: rgba(255,255,255,0.25); border: none; color: white; font-size: 12px; cursor: pointer; border-radius: 5px; padding: 3px 10px; font-weight: bold;">➖ Thu nhỏ</button>
