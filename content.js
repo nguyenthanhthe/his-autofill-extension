@@ -363,73 +363,72 @@
     }
 
     function detectAgeGroup(pane) {
-        // Tầng 1: Kiểm tra trực tiếp từ tiêu đề biểu mẫu đang mở (nếu đang ở màn hình Khám)
-        const docHeader = document.querySelector('.tab-app-main, h2, h3, h4, .ant-page-header, .title')?.innerText || '';
-        if (docHeader.includes('DƯỚI 6 TUỔI') || docHeader.includes('dưới 6 tuổi')) {
-            return 'dưới 6 tuổi';
-        }
-        if (docHeader.includes('ĐỦ 6 TUỔI ĐẾN DƯỚI 18 TUỔI') || docHeader.includes('đủ 6 tuổi đến dưới 18 tuổi')) {
-            return 'từ đủ 6 tuổi đến dưới 18 tuổi';
-        }
-        if (docHeader.includes('TỪ ĐỦ 18 TUỔI TRỞ LÊN') || docHeader.includes('từ đủ 18 tuổi trở lên')) {
-            return 'từ đủ 18 tuổi trở lên';
+        scanPatientInfo();
+
+        // Tầng 1 (Tuyệt đối): Ưu tiên tuổi số học thực tế của người khám
+        let age = cachedPatient.age;
+        if (!age && cachedPatient.birthYear) {
+            const y = parseInt(cachedPatient.birthYear, 10);
+            if (y > 1900 && y <= 2030) {
+                age = new Date().getFullYear() - y;
+            }
         }
 
         const activePane = pane || document.querySelector('.tab-app-main > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane-active') || document;
 
-        // Tầng 2: Tìm tuổi trực tiếp từ ô "Tuổi"
-        const tuoiInp = activePane.querySelector('input[name="tuoi"], input[name*="tuoi" i]');
-        if (tuoiInp && tuoiInp.value && !isNaN(parseInt(tuoiInp.value, 10))) {
-            const a = parseInt(tuoiInp.value, 10);
-            if (a < 6) return 'dưới 6 tuổi';
-            if (a < 18) return 'từ đủ 6 tuổi đến dưới 18 tuổi';
+        // Nếu chưa có age, quét từ các ô input cụ thể
+        if (!age) {
+            const tuoiInp = activePane.querySelector('input[name="tuoi"], input[name*="tuoi" i]');
+            if (tuoiInp && tuoiInp.value && !isNaN(parseInt(tuoiInp.value, 10))) {
+                age = parseInt(tuoiInp.value, 10);
+            }
+        }
+
+        if (!age) {
+            const namInp = activePane.querySelector('input[name="namSinh"], input[name="nam_sinh"], input[name="nam"]') ||
+                           Array.from(activePane.querySelectorAll('input')).find(i => {
+                               const lbl = i.closest('nz-form-item, .ant-form-item, div')?.querySelector('label, span')?.innerText || '';
+                               return lbl.includes('Năm') && !lbl.includes('Ngày/Tháng/Năm');
+                           });
+            if (namInp && namInp.value && /^\d{4}$/.test(namInp.value.trim())) {
+                const y = parseInt(namInp.value.trim(), 10);
+                if (y > 1900 && y <= 2030) age = new Date().getFullYear() - y;
+            }
+        }
+
+        if (!age) {
+            const dobInput = activePane.querySelector('input[name="ngaySinh"]') || 
+                             activePane.querySelector('input[placeholder="Ngày/Tháng/Năm"]');
+            if (dobInput && dobInput.value) {
+                const yMatch = dobInput.value.trim().match(/\d{4}$/);
+                if (yMatch) {
+                    const y = parseInt(yMatch[0], 10);
+                    if (y > 1900 && y <= 2030) age = new Date().getFullYear() - y;
+                }
+            }
+        }
+
+        // Nếu đã xác định được tuổi bằng số học
+        if (age > 0) {
+            cachedPatient.age = age;
+            if (age < 6) return 'dưới 6 tuổi';
+            if (age < 18) return 'từ đủ 6 tuổi đến dưới 18 tuổi';
             return 'từ đủ 18 tuổi trở lên';
         }
 
-        // Tầng 3: Tìm năm sinh từ ô "* Năm"
-        const namInp = activePane.querySelector('input[name="namSinh"], input[name="nam_sinh"], input[name="nam"]') ||
-                       Array.from(activePane.querySelectorAll('input')).find(i => {
-                           const lbl = i.closest('nz-form-item, .ant-form-item, div')?.querySelector('label, span')?.innerText || '';
-                           return lbl.includes('Năm') && !lbl.includes('Ngày/Tháng/Năm');
-                       });
-        if (namInp && namInp.value && /^\d{4}$/.test(namInp.value.trim())) {
-            const y = parseInt(namInp.value.trim(), 10);
-            const a = new Date().getFullYear() - y;
-            if (a < 6) return 'dưới 6 tuổi';
-            if (a < 18) return 'từ đủ 6 tuổi đến dưới 18 tuổi';
-            return 'từ đủ 18 tuổi trở lên';
-        }
-
-        // Tầng 4: Tìm từ ô ngày sinh đầy đủ "Ngày sinh"
-        let dobStr = '';
-        const dobInput = activePane.querySelector('input[name="ngaySinh"]') || 
-                         activePane.querySelector('input[placeholder="Ngày/Tháng/Năm"]');
-        if (dobInput && dobInput.value) {
-            dobStr = dobInput.value.trim();
-        } else if (cachedPatient.birthYear) {
-            dobStr = cachedPatient.birthYear;
-        } else {
-            const bodyText = activePane.innerText || document.body.innerText;
-            const match = bodyText.match(/(\d{10,18})\s*-\s*([^\n\r\-]+)-\s*(\d{4})/);
-            if (match && match[3]) dobStr = match[3];
-        }
-
-        if (dobStr) {
-            let birthYear = 0;
-            const parts = dobStr.split(/[\/\-\.]/);
-            if (parts.length === 3) {
-                birthYear = parseInt(parts[2], 10);
-            } else if (/^\d{4}$/.test(dobStr)) {
-                birthYear = parseInt(dobStr, 10);
-            }
-            if (birthYear > 1900 && birthYear <= 2030) {
-                const currentYear = new Date().getFullYear();
-                const age = currentYear - birthYear;
-                if (age < 6) return 'dưới 6 tuổi';
-                if (age < 18) return 'từ đủ 6 tuổi đến dưới 18 tuổi';
-                return 'từ đủ 18 tuổi trở lên';
+        // Tầng 2: CHỈ KHI HOÀN TOÀN KHÔNG CÓ TUỔI mới đọc tiêu đề mẫu khám cụ thể đang mở
+        const isKhamActive = document.querySelector('.tab-app-main .ant-tabs-tab-active')?.innerText?.includes('Khám sức khỏe');
+        if (isKhamActive) {
+            const titleEls = Array.from(activePane.querySelectorAll('h1, h2, h3, h4, .form-title, .title, .page-title'));
+            const kskTitle = titleEls.find(el => el.innerText.toUpperCase().includes('GIẤY KHÁM SỨC KHỎE'));
+            if (kskTitle) {
+                const txt = kskTitle.innerText.toUpperCase();
+                if (txt.includes('DƯỚI 6 TUỔI')) return 'dưới 6 tuổi';
+                if (txt.includes('6 TUỔI ĐẾN DƯỚI 18 TUỔI')) return 'từ đủ 6 tuổi đến dưới 18 tuổi';
+                if (txt.includes('18 TUỔI TRỞ LÊN')) return 'từ đủ 18 tuổi trở lên';
             }
         }
+
         return 'từ đủ 18 tuổi trở lên';
     }
 
