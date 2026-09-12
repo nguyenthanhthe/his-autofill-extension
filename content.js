@@ -19,6 +19,11 @@
             .replace(/>/g, '&gt;');
     }
 
+    function escapeRegExp(str) {
+        if (!str) return '';
+        return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
     const defaultExamTexts = {
         tuanHoan: "T1T2 đều rõ không có tiếng bệnh lý",
         hoHap: "Lồng ngực cân đối di động đều theo nhịp thở,phổi không có ral",
@@ -182,14 +187,20 @@
             input.dispatchEvent(new KeyboardEvent('keyup', { key: textMatch[0] || 'a', bubbles: true }));
         }
 
-        const wordRegex = new RegExp(`(^|\\s|\\|)${cleanMatch}(\\s|\\||$)`, 'i');
+        let wordRegex;
+        try {
+            wordRegex = new RegExp(`(^|\\s|\\|)${escapeRegExp(cleanMatch)}(\\s|\\||$)`, 'i');
+        } catch (e) {
+            wordRegex = null;
+        }
 
         for (let i = 0; i < 25; i++) {
             await delay(80);
-            const options = Array.from(document.querySelectorAll('.ant-select-item-option'));
+            const activeDropdown = document.querySelector('.ant-select-dropdown:not(.ant-select-dropdown-hidden)') || document;
+            const options = Array.from(activeDropdown.querySelectorAll('.ant-select-item-option')).filter(o => o.offsetParent !== null);
             if (!options.length) continue;
 
-            let match = options.find(o => wordRegex.test(o.innerText));
+            let match = wordRegex ? options.find(o => wordRegex.test(o.innerText)) : null;
             if (!match) {
                 match = options.find(o => o.innerText.trim().toLowerCase().startsWith(cleanMatch));
             }
@@ -207,14 +218,14 @@
         return false;
     };
 
-    // Helper tìm dòng chuyên khoa theo tiêu đề cột đầu tiên trong bảng
+    // Helper tìm dòng chuyên khoa theo tiêu đề cột đầu tiên trong bảng (chuẩn hóa gạch ngang en-dash, em-dash)
     const findTableRowByTitle = (pane, titleKeyword) => {
         const rows = Array.from(pane.querySelectorAll('tr'));
-        const cleanKeyword = titleKeyword.trim().toLowerCase();
+        const cleanKeyword = titleKeyword.toLowerCase().replace(/[–—\-\s]+/g, ' ').trim();
         return rows.find(r => {
             const firstTd = r.querySelector('td');
             if (!firstTd) return false;
-            const text = firstTd.innerText.trim().toLowerCase();
+            const text = firstTd.innerText.toLowerCase().replace(/[–—\-\s]+/g, ' ').trim();
             return text === cleanKeyword || text.includes(cleanKeyword);
         });
     };
@@ -241,28 +252,36 @@
 
     // Helper tìm khối form động (Mắt, TMH, RHM)
     const findDynamicFormByTitle = (pane, titleKeyword) => {
-        const dfs = Array.from(pane.querySelectorAll('ord-dynamic-form'));
-        const cleanKeyword = titleKeyword.trim().toLowerCase();
-        return dfs.find(df => {
-            const title = df.querySelector('legend, h3, h4, h5, .title')?.innerText || 
+        const cleanKeyword = titleKeyword.toLowerCase().replace(/[–—\-\s]+/g, ' ').trim();
+        const dfs = Array.from(pane.querySelectorAll('ord-dynamic-form, fieldset, .ant-card, nz-card'));
+        let found = dfs.find(df => {
+            const title = df.querySelector('legend, h3, h4, h5, .title, .ant-card-head-title')?.innerText || 
                           df.previousElementSibling?.innerText || '';
-            return title.trim().toLowerCase().includes(cleanKeyword);
+            const cleanTitle = title.toLowerCase().replace(/[–—\-\s]+/g, ' ').trim();
+            return cleanTitle.includes(cleanKeyword);
         });
+        if (found) return found;
+
+        // Fallback: Tìm thẻ tiêu đề gần nhất
+        const headings = Array.from(pane.querySelectorAll('h3, h4, h5, legend, .title, strong'));
+        const head = headings.find(h => h.innerText.toLowerCase().replace(/[–—\-\s]+/g, ' ').trim().includes(cleanKeyword));
+        if (head) {
+            return head.closest('ord-dynamic-form, fieldset, .ant-card, nz-card, div') || head.parentElement;
+        }
+        return null;
     };
 
     // Helper tìm select theo nhãn (label hoặc span mô tả)
     const findSelectByLabel = (container, labelKeywords) => {
         const keywords = Array.isArray(labelKeywords) ? labelKeywords : [labelKeywords];
-        const formItems = Array.from(container.querySelectorAll('.ant-form-item, nz-form-item, div.row > div, div'));
-        for (const item of formItems) {
-            const label = item.querySelector('label, .ant-form-item-label, span.title, span');
-            if (label) {
-                const txt = label.innerText.trim().toLowerCase();
-                for (const kw of keywords) {
-                    if (txt.includes(kw.toLowerCase())) {
-                        const sel = item.querySelector('nz-select');
-                        if (sel) return sel;
-                    }
+        const labels = Array.from(container.querySelectorAll('label, .ant-form-item-label, span.title, span'));
+        for (const label of labels) {
+            const txt = label.innerText.trim().toLowerCase();
+            for (const kw of keywords) {
+                if (txt === kw.toLowerCase() || txt.includes(kw.toLowerCase())) {
+                    const formItem = label.closest('nz-form-item, .ant-form-item, div.row > div') || label.parentElement;
+                    const sel = formItem?.querySelector('nz-select');
+                    if (sel) return sel;
                 }
             }
         }
@@ -285,18 +304,43 @@
         name: '',
         cccd: '',
         birthYear: '',
-        age: 0,
+        age: null,
         ageGroup: '',
         gender: ''
     };
+
+    function resetCachedPatient() {
+        cachedPatient = {
+            name: '',
+            cccd: '',
+            birthYear: '',
+            age: null,
+            ageGroup: '',
+            gender: ''
+        };
+    }
 
     function scanPatientInfo() {
         // 1. Nếu đang mở tab Khám sức khỏe định kỳ
         const paneKham = document.querySelector('.tab-app-main > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane-active') || document;
         const hoTenInp = paneKham.querySelector('input[name="ho_va_ten"]');
-        if (hoTenInp && hoTenInp.value.trim()) {
-            cachedPatient.name = hoTenInp.value.trim();
-            cachedPatient.cccd = paneKham.querySelector('input[name="so_cccd"]')?.value.trim() || '';
+        if (hoTenInp) {
+            const currentName = hoTenInp.value.trim();
+            const cccdInp = paneKham.querySelector('input[name="so_cccd"]');
+            const currentCccd = cccdInp?.value.trim() || '';
+
+            if (!currentName && !currentCccd) {
+                resetCachedPatient();
+                return;
+            }
+
+            if (currentName !== cachedPatient.name || (currentCccd && currentCccd !== cachedPatient.cccd)) {
+                resetCachedPatient();
+            }
+
+            cachedPatient.name = currentName;
+            cachedPatient.cccd = currentCccd;
+
             const dob = paneKham.querySelector('input[placeholder="Ngày/Tháng/Năm"]')?.value.trim() || '';
             const yMatch = dob.match(/\d{4}$/);
             if (yMatch) {
@@ -305,14 +349,13 @@
                 if (y > 1900 && y <= 2030) cachedPatient.age = new Date().getFullYear() - y;
             }
 
-            const radios = Array.from(paneKham.querySelectorAll('.ant-radio-wrapper, label, span'));
+            const radios = Array.from(paneKham.querySelectorAll('.ant-radio-wrapper, label'));
             const namRadio = radios.find(r => r.innerText.trim() === 'Nam');
             const nuRadio = radios.find(r => r.innerText.trim() === 'Nữ');
-            if (namRadio && (namRadio.classList.contains('ant-radio-wrapper-checked') || !!namRadio.querySelector('input:checked'))) {
-                cachedPatient.gender = 'Nam';
-            } else if (nuRadio && (nuRadio.classList.contains('ant-radio-wrapper-checked') || !!nuRadio.querySelector('input:checked'))) {
-                cachedPatient.gender = 'Nữ';
-            }
+            const isNam = namRadio && (namRadio.classList.contains('ant-radio-wrapper-checked') || namRadio.querySelector('.ant-radio-checked') || !!namRadio.querySelector('input:checked'));
+            const isNu = nuRadio && (nuRadio.classList.contains('ant-radio-wrapper-checked') || nuRadio.querySelector('.ant-radio-checked') || !!nuRadio.querySelector('input:checked'));
+            if (isNam) cachedPatient.gender = 'Nam';
+            else if (isNu) cachedPatient.gender = 'Nữ';
             return;
         }
 
@@ -321,53 +364,64 @@
         if (activeTopTab.includes('Tiếp đón')) {
             const paneTD = document.querySelector('.tab-app-main > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane-active') || document;
             const text = paneTD.innerText;
-            const match = text.match(/(\d{10,18})\s*-\s*([^\n\r\-]+)-\s*(\d{4})/);
+            const match = text.match(/(\d{9,18})\s*-\s*([^\n\r\-]+)-\s*(\d{4})/);
+            const nameInp = paneTD.querySelector('input[name="tenDayDu"]');
+            const currentName = match ? match[2].trim() : (nameInp?.value?.trim() || '');
+            const currentCccd = match ? match[1].trim() : (paneTD.querySelector('input[name="soCmt"]')?.value?.trim() || '');
+
+            if (!currentName && !currentCccd) {
+                resetCachedPatient();
+                return;
+            }
+
+            if (currentName !== cachedPatient.name || (currentCccd && currentCccd !== cachedPatient.cccd)) {
+                resetCachedPatient();
+            }
+
+            cachedPatient.name = currentName;
+            cachedPatient.cccd = currentCccd;
+
             if (match) {
-                cachedPatient.cccd = match[1].trim();
-                cachedPatient.name = match[2].trim();
                 cachedPatient.birthYear = match[3].trim();
                 const y = parseInt(match[3].trim(), 10);
                 if (y > 1900 && y <= 2030) cachedPatient.age = new Date().getFullYear() - y;
-            } else {
-                const nameInp = paneTD.querySelector('input[name="tenDayDu"]');
-                if (nameInp && nameInp.value.trim()) cachedPatient.name = nameInp.value.trim();
-                const cccdInp = paneTD.querySelector('input[name="soCmt"]');
-                if (cccdInp && cccdInp.value.trim()) cachedPatient.cccd = cccdInp.value.trim();
+            }
 
-                const namInp = paneTD.querySelector('input[name="namSinh"], input[name="nam_sinh"], input[name="nam"]') ||
-                               Array.from(paneTD.querySelectorAll('input')).find(i => {
-                                   const lbl = i.closest('nz-form-item, .ant-form-item, div')?.querySelector('label, span')?.innerText || '';
-                                   return lbl.includes('Năm') && !lbl.includes('Ngày/Tháng/Năm');
-                               });
-                if (namInp && namInp.value && /^\d{4}$/.test(namInp.value.trim())) {
-                    cachedPatient.birthYear = namInp.value.trim();
-                    cachedPatient.age = new Date().getFullYear() - parseInt(namInp.value.trim(), 10);
-                }
+            const namInp = paneTD.querySelector('input[name="namSinh"], input[name="nam_sinh"], input[name="nam"]') ||
+                           Array.from(paneTD.querySelectorAll('input')).find(i => {
+                               const lbl = i.closest('nz-form-item, .ant-form-item, div')?.querySelector('label, span')?.innerText || '';
+                               return lbl.includes('Năm') && !lbl.includes('Ngày/Tháng/Năm');
+                           });
+            if (namInp && namInp.value && /^\d{4}$/.test(namInp.value.trim())) {
+                cachedPatient.birthYear = namInp.value.trim();
+                const y = parseInt(namInp.value.trim(), 10);
+                if (y > 1900 && y <= 2030) cachedPatient.age = new Date().getFullYear() - y;
+            }
 
-                const tuoiInp = paneTD.querySelector('input[name="tuoi"], input[name*="tuoi" i]');
-                if (tuoiInp && tuoiInp.value && !isNaN(parseInt(tuoiInp.value, 10))) {
-                    cachedPatient.age = parseInt(tuoiInp.value, 10);
+            const tuoiInp = paneTD.querySelector('input[name="tuoi"], input[name*="tuoi" i]');
+            if (tuoiInp && tuoiInp.value && !isNaN(parseInt(tuoiInp.value, 10))) {
+                const parsedAge = parseInt(tuoiInp.value, 10);
+                if (parsedAge >= 0) {
+                    cachedPatient.age = parsedAge;
                     if (!cachedPatient.birthYear) cachedPatient.birthYear = String(new Date().getFullYear() - cachedPatient.age);
                 }
             }
 
-            const radios = Array.from(paneTD.querySelectorAll('.ant-radio-wrapper, label, span'));
+            const radios = Array.from(paneTD.querySelectorAll('.ant-radio-wrapper, label'));
             const namRadio = radios.find(r => r.innerText.trim() === 'Nam');
             const nuRadio = radios.find(r => r.innerText.trim() === 'Nữ');
-            if (namRadio && (namRadio.classList.contains('ant-radio-wrapper-checked') || !!namRadio.querySelector('input:checked'))) {
-                cachedPatient.gender = 'Nam';
-            } else if (nuRadio && (nuRadio.classList.contains('ant-radio-wrapper-checked') || !!nuRadio.querySelector('input:checked'))) {
-                cachedPatient.gender = 'Nữ';
-            }
+            const isNam = namRadio && (namRadio.classList.contains('ant-radio-wrapper-checked') || namRadio.querySelector('.ant-radio-checked') || !!namRadio.querySelector('input:checked'));
+            const isNu = nuRadio && (nuRadio.classList.contains('ant-radio-wrapper-checked') || nuRadio.querySelector('.ant-radio-checked') || !!nuRadio.querySelector('input:checked'));
+            if (isNam) cachedPatient.gender = 'Nam';
+            else if (isNu) cachedPatient.gender = 'Nữ';
         }
     }
 
     function detectAgeGroup(pane) {
         scanPatientInfo();
 
-        // Tầng 1 (Tuyệt đối): Ưu tiên tuổi số học thực tế của người khám
         let age = cachedPatient.age;
-        if (!age && cachedPatient.birthYear) {
+        if ((age === null || age === undefined || isNaN(age)) && cachedPatient.birthYear) {
             const y = parseInt(cachedPatient.birthYear, 10);
             if (y > 1900 && y <= 2030) {
                 age = new Date().getFullYear() - y;
@@ -377,14 +431,15 @@
         const activePane = pane || document.querySelector('.tab-app-main > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane-active') || document;
 
         // Nếu chưa có age, quét từ các ô input cụ thể
-        if (!age) {
+        if (age === null || age === undefined || isNaN(age)) {
             const tuoiInp = activePane.querySelector('input[name="tuoi"], input[name*="tuoi" i]');
             if (tuoiInp && tuoiInp.value && !isNaN(parseInt(tuoiInp.value, 10))) {
-                age = parseInt(tuoiInp.value, 10);
+                const parsed = parseInt(tuoiInp.value, 10);
+                if (parsed >= 0) age = parsed;
             }
         }
 
-        if (!age) {
+        if (age === null || age === undefined || isNaN(age)) {
             const namInp = activePane.querySelector('input[name="namSinh"], input[name="nam_sinh"], input[name="nam"]') ||
                            Array.from(activePane.querySelectorAll('input')).find(i => {
                                const lbl = i.closest('nz-form-item, .ant-form-item, div')?.querySelector('label, span')?.innerText || '';
@@ -396,7 +451,7 @@
             }
         }
 
-        if (!age) {
+        if (age === null || age === undefined || isNaN(age)) {
             const dobInput = activePane.querySelector('input[name="ngaySinh"]') || 
                              activePane.querySelector('input[placeholder="Ngày/Tháng/Năm"]');
             if (dobInput && dobInput.value) {
@@ -408,8 +463,8 @@
             }
         }
 
-        // Nếu đã xác định được tuổi bằng số học
-        if (age > 0) {
+        // Tầng 1 (Tuyệt đối): Ưu tiên tuổi số học thực tế của người khám (bao gồm trẻ 0 tuổi)
+        if (age !== null && age !== undefined && !isNaN(age) && age >= 0) {
             cachedPatient.age = age;
             if (age < 6) return 'dưới 6 tuổi';
             if (age < 18) return 'từ đủ 6 tuổi đến dưới 18 tuổi';
@@ -436,8 +491,8 @@
         scanPatientInfo();
         const ageGroup = detectAgeGroup();
         let desc = '';
-        if (cachedPatient.age > 0) {
-            desc = ` (${cachedPatient.age} tuổi)`;
+        if (cachedPatient.age !== null && cachedPatient.age !== undefined && !isNaN(cachedPatient.age) && cachedPatient.age >= 0) {
+            desc = cachedPatient.age === 0 ? ' (< 1 tuổi)' : ` (${cachedPatient.age} tuổi)`;
         }
         if (ageGroup === 'dưới 6 tuổi') {
             return `Dưới 6 tuổi${desc}`;
@@ -473,13 +528,19 @@
             let res = parts.join(' - ');
             const meta = [];
             if (cachedPatient.gender) meta.push(cachedPatient.gender);
-            if (cachedPatient.age > 0) meta.push(`${cachedPatient.age} tuổi`);
+            if (cachedPatient.age !== null && cachedPatient.age !== undefined && !isNaN(cachedPatient.age) && cachedPatient.age >= 0) {
+                meta.push(cachedPatient.age === 0 ? '< 1 tuổi' : `${cachedPatient.age} tuổi`);
+            }
             if (meta.length > 0) res += ` (${meta.join(', ')})`;
             return res;
         }
 
-        const match = document.body.innerText.match(/(\d{10,18}\s*-\s*[^\n\r\-]+-\s*\d{4})/);
-        return match ? match[1].trim() : '';
+        const activePane = document.querySelector('.tab-app-main > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane-active');
+        if (activePane) {
+            const match = activePane.innerText.match(/(\d{9,18}\s*-\s*[^\n\r\-]+-\s*\d{4})/);
+            if (match) return match[1].trim();
+        }
+        return '';
     }
 
     // ----------------------------------------------------
@@ -554,8 +615,9 @@
         if (!saveBtn) throw new Error('Không tìm thấy nút Lưu Tiếp đón');
 
         saveBtn.click();
+        await delay(300);
 
-        for (let i = 0; i < 25; i++) {
+        for (let i = 0; i < 30; i++) {
             await delay(150);
             const err = checkHisErrorMessage();
             if (err) throw new Error(`HIS báo lỗi: ${err}`);
@@ -573,14 +635,7 @@
     async function navigateToKhamSucKhoe(statusEl) {
         if (statusEl) statusEl.innerText = '⏳ Đang chuyển sang Khám sức khoẻ (F6)...';
 
-        const currentTabs = Array.from(document.querySelectorAll('.tab-app-main .ant-tabs-tab, .ant-tabs-tab'));
-        const alreadyKhamTab = currentTabs.find(t => t.innerText.includes('Khám sức khỏe định kỳ') || t.innerText.includes('Khám sức khỏe'));
-        if (alreadyKhamTab) {
-            alreadyKhamTab.click();
-            await delay(350);
-            return true;
-        }
-
+        // 1. Ưu tiên nút "Khám sức khoẻ (F6)" ngay trong pane Tiếp đón hiện tại để load đúng bệnh nhân vừa tiếp đón
         const pane = document.querySelector('.tab-app-main > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane-active') || document;
         const buttons = Array.from(pane.querySelectorAll('button'));
         const f6Btn = buttons.find(b => b.innerText.includes('Khám sức khoẻ (F6)') || b.innerText.includes('Khám sức khoẻ') || b.innerText.includes('(F6)'));
@@ -591,6 +646,16 @@
             return true;
         }
 
+        // 2. Nếu đã mở sẵn tab Khám sức khỏe
+        const currentTabs = Array.from(document.querySelectorAll('.tab-app-main .ant-tabs-tab, .ant-tabs-tab'));
+        const alreadyKhamTab = currentTabs.find(t => t.innerText.includes('Khám sức khỏe định kỳ') || t.innerText.includes('Khám sức khỏe'));
+        if (alreadyKhamTab) {
+            alreadyKhamTab.click();
+            await delay(350);
+            return true;
+        }
+
+        // 3. Fallback: Trigger phím F6 trong ngữ cảnh Tiếp đón
         const activeTopTab = document.querySelector('.tab-app-main .ant-tabs-tab-active')?.innerText || '';
         if (activeTopTab.includes('Tiếp đón')) {
             window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F6', code: 'F6', keyCode: 117, bubbles: true }));
@@ -689,7 +754,7 @@
         if (!cfg.skipMat) {
             const dfMat = findDynamicFormByTitle(paneLS, 'MẮT');
             if (dfMat) {
-                const inputsMat = Array.from(dfMat.querySelectorAll('input:not(.ant-select-selection-search-input)'));
+                const inputsMat = Array.from(dfMat.querySelectorAll('input:not([type="hidden"]):not(.ant-select-selection-search-input)'));
                 const inpPhai = dfMat.querySelector('input[name="khong_kinh_mat_phai"]') || inputsMat[0];
                 const inpTrai = dfMat.querySelector('input[name="khong_kinh_mat_trai"]') || inputsMat[1];
                 const inpCoKinhPhai = dfMat.querySelector('input[name="co_kinh_mat_phai"]') || inputsMat[2];
@@ -713,7 +778,7 @@
         if (!cfg.skipTmh) {
             const dfTmh = findDynamicFormByTitle(paneLS, 'TAI - MŨI - HỌNG') || findDynamicFormByTitle(paneLS, 'TAI');
             if (dfTmh) {
-                const inputsTmh = Array.from(dfTmh.querySelectorAll('input:not(.ant-select-selection-search-input)'));
+                const inputsTmh = Array.from(dfTmh.querySelectorAll('input:not([type="hidden"]):not(.ant-select-selection-search-input)'));
                 if (inputsTmh[0]) setAngularValue(inputsTmh[0], cfg.thinhLucPThuong || '5');
                 if (inputsTmh[1]) setAngularValue(inputsTmh[1], cfg.thinhLucPTham || '0.5');
                 if (inputsTmh[2]) setAngularValue(inputsTmh[2], cfg.thinhLucTThuong || '5');
@@ -748,14 +813,19 @@
         await clickSubTab('KẾT LUẬN');
         const paneKL = document.querySelector('.vertical-tabs .ant-tabs-tabpane-active') || document;
 
-        // Checkbox Phân loại sức khỏe (Loại I / II / III / IV)
+        // Checkbox Phân loại sức khỏe (Loại I / II / III / IV / V)
         const cbsKL = Array.from(paneKL.querySelectorAll('.ant-checkbox-wrapper'));
+        const isLoai1 = txt => /\bLoại\s*I\b/i.test(txt) && !/\bLoại\s*(II|III|IV|V)\b/i.test(txt);
+        const isLoai2 = txt => /\bLoại\s*II\b/i.test(txt) && !/\bLoại\s*III\b/i.test(txt);
+        const isLoai3 = txt => /\bLoại\s*III\b/i.test(txt);
+        const isLoai4 = txt => /\bLoại\s*IV\b/i.test(txt);
+
         const targetCb = cbsKL.find(c => {
             const txt = c.innerText;
-            if (cfg.plKetLuan.includes('Loại I:') && txt.includes('Loại I:')) return true;
-            if (cfg.plKetLuan.includes('Loại II') && txt.includes('Loại II')) return true;
-            if (cfg.plKetLuan.includes('Loại III') && txt.includes('Loại III')) return true;
-            if (cfg.plKetLuan.includes('Loại IV') && txt.includes('Loại IV')) return true;
+            if (cfg.plKetLuan.includes('Loại I') && isLoai1(txt)) return true;
+            if (cfg.plKetLuan.includes('Loại II') && isLoai2(txt)) return true;
+            if (cfg.plKetLuan.includes('Loại III') && isLoai3(txt)) return true;
+            if (cfg.plKetLuan.includes('Loại IV') && isLoai4(txt)) return true;
             return false;
         });
 
@@ -764,7 +834,7 @@
         }
         // Bỏ chọn các loại khác
         cbsKL.forEach(c => {
-            if (c !== targetCb && (c.innerText.includes('Loại I:') || c.innerText.includes('Loại II') || c.innerText.includes('Loại III') || c.innerText.includes('Loại IV') || c.innerText.includes('Loại V'))) {
+            if (c !== targetCb && /\bLoại\s*(I|II|III|IV|V)\b/i.test(c.innerText)) {
                 if (c.classList.contains('ant-checkbox-wrapper-checked')) {
                     c.click();
                 }
@@ -790,13 +860,14 @@
                     searchInp.focus();
                     searchInp.value = icdTarget;
                     searchInp.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-                    searchInp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Z', code: 'KeyZ', bubbles: true }));
-                    searchInp.dispatchEvent(new KeyboardEvent('keyup', { key: 'Z', code: 'KeyZ', bubbles: true }));
+                    searchInp.dispatchEvent(new KeyboardEvent('keydown', { key: icdTarget[0] || 'Z', bubbles: true }));
+                    searchInp.dispatchEvent(new KeyboardEvent('keyup', { key: icdTarget[0] || 'Z', bubbles: true }));
                 }
 
                 for (let i = 0; i < 20; i++) {
                     await delay(90);
-                    const opts = Array.from(document.querySelectorAll('.ant-select-item-option'));
+                    const activeDropdown = document.querySelector('.ant-select-dropdown:not(.ant-select-dropdown-hidden)') || document;
+                    const opts = Array.from(activeDropdown.querySelectorAll('.ant-select-item-option')).filter(o => o.offsetParent !== null);
                     const z10Opt = opts.find(o => o.innerText.includes(icdTarget));
                     if (z10Opt) {
                         z10Opt.click();
@@ -808,21 +879,29 @@
             }
         }
 
-        // Xác nhận kết thúc khám
-        const cbKetThuc = cbsKL.find(c => c.innerText.includes('Xác nhận kết thúc khám') || c.closest('div')?.innerText?.includes('Xác nhận kết thúc khám')) || cbsKL[cbsKL.length - 1];
+        // Xác nhận kết thúc khám (an toàn, không click bừa checkbox ngoài ý muốn)
+        const cbKetThuc = cbsKL.find(c => {
+            const t = (c.innerText + ' ' + (c.closest('div')?.innerText || '')).toLowerCase();
+            return t.includes('kết thúc khám') || t.includes('kết thúc');
+        });
         if (cbKetThuc && !cbKetThuc.classList.contains('ant-checkbox-wrapper-checked')) {
             cbKetThuc.click();
         }
 
         // Bác sĩ kết luận
-        const selectsKL = Array.from(paneKL.querySelectorAll('nz-select'));
-        const docSelectKL = selectsKL[1] || selectsKL[selectsKL.length - 1];
+        const docSelectKL = findSelectByLabel(paneKL, ['bác sĩ kết luận', 'bác sĩ', 'người kết luận']) ||
+                            paneKL.querySelectorAll('nz-select')[1] ||
+                            paneKL.querySelector('nz-select');
         if (docSelectKL && cfg.docKetLuan) {
             await selectOption(docSelectKL, cfg.docKetLuan);
         }
 
         // Giờ kết thúc
-        const timeInput = paneKL.querySelector('input[placeholder="__:__"]');
+        const timeInput = paneKL.querySelector('input[placeholder="__:__"], input[name*="gio" i], input[name*="time" i]') ||
+                          Array.from(paneKL.querySelectorAll('input')).find(i => {
+                              const lbl = i.closest('nz-form-item, .ant-form-item, div')?.querySelector('label, span')?.innerText || '';
+                              return lbl.toLowerCase().includes('giờ kết thúc') || lbl.toLowerCase().includes('thời gian');
+                          });
         if (timeInput) {
             setAngularValue(timeInput, cfg.gioKetThuc || '07:45');
         }
@@ -834,7 +913,8 @@
             const saveBtn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.trim() === 'Lưu' || b.innerText.includes('Lưu (F11)'));
             if (saveBtn) {
                 saveBtn.click();
-                for (let i = 0; i < 25; i++) {
+                await delay(300);
+                for (let i = 0; i < 30; i++) {
                     await delay(150);
                     const err = checkHisErrorMessage();
                     if (err) throw new Error(`HIS báo lỗi: ${err}`);
@@ -1078,6 +1158,11 @@
 
     let lastObservedHisTab = '';
     function syncContextTab() {
+        // Không tự động chuyển tab nếu người dùng đang gõ cấu hình trong tab Cài đặt
+        if (document.activeElement && document.getElementById('section-caidat')?.contains(document.activeElement)) {
+            return;
+        }
+
         const activeTopTab = document.querySelector('.tab-app-main .ant-tabs-tab-active')?.innerText || '';
         if (activeTopTab && activeTopTab !== lastObservedHisTab) {
             lastObservedHisTab = activeTopTab;
@@ -1557,12 +1642,12 @@
             const btnRun = document.getElementById('his-panel-run-btn');
             if (btnRun) btnRun.click();
         } else if (e.key === 'F6') {
+            e.preventDefault();
             const activeTopTab = document.querySelector('.tab-app-main .ant-tabs-tab-active')?.innerText || '';
             if (activeTopTab.includes('Tiếp đón')) {
                 const btnTdAndKham = document.getElementById('btn-td-and-kham');
                 if (btnTdAndKham) btnTdAndKham.click();
             } else {
-                e.preventDefault();
                 const btnRun = document.getElementById('his-panel-run-btn');
                 if (btnRun) btnRun.click();
             }

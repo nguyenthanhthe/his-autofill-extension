@@ -146,3 +146,34 @@ Hệ thống HIS V20 áp dụng 3 biểu mẫu và đối tượng khám sức k
 - **Tầng 5 (Bộ nhớ đệm & Băng tìm kiếm)**: Tự động trích xuất năm sinh từ kết quả tra cứu CCCD trên thanh thông tin.
 - **Hiển thị trực quan**: Cung cấp dòng trạng thái **`Đối tượng tuổi: [Nhóm tuổi + Số tuổi]`** ngay trên bảng điều khiển để Bác sĩ đối soát tức thì.
 - **Định vị Dropdown theo Nhãn ngữ nghĩa**: Thay vì phụ thuộc vào số thứ tự DOM, tiện ích tự tìm theo từ khóa ngữ nghĩa (`Đối tượng`, `Mục đích`, `Kinh phí`, `Nghề nghiệp`) giúp không bao giờ bị lệch trường khi HIS cập nhật giao diện.
+
+---
+
+## 9. Rà Soát Toàn Diện Logic & Gia Cố Độ Bền (Logic Audit & Edge-Case Hardening)
+
+Nhằm đảm bảo tiện ích hoạt động tuyệt đối an toàn và tin cậy trong môi trường trạm y tế thực tế, chúng tôi đã rà soát toàn bộ codebase và hoàn tất 10 cải tiến logic quan trọng:
+
+1. **Xử lý chuẩn xác Trẻ sơ sinh / Dưới 1 tuổi (`tuổi = 0`)**:
+   - Trước đây biến tuổi khởi tạo là `0` và kiểm tra `age > 0`, khiến trẻ dưới 1 tuổi (sinh cùng năm hiện tại) bị rớt vào nhóm mặc định người lớn.
+   - Hiện đã xử lý: `age` khởi tạo là `null`, kiểm tra `age >= 0`, phân loại chính xác `dưới 6 tuổi` và hiển thị nhãn `(< 1 tuổi)`.
+2. **Cơ chế dọn sạch Cache bệnh nhân cũ (`resetCachedPatient`)**:
+   - Khi bác sĩ làm mới form hoặc tiếp đón bệnh nhân mới, tiện ích tự động reset sạch thông tin cũ (tên, CCCD, tuổi, giới tính).
+   - Ngăn chặn hoàn toàn việc giữ nhầm giới tính Nam của người trước sang bệnh nhân Nữ tiếp theo (gây bỏ sót Sản phụ khoa).
+3. **Phòng vệ Regex Crash trong `selectOption` (`escapeRegExp`)**:
+   - Tự động escape các ký tự đặc biệt trong chuỗi tìm kiếm (`()`, `+`, `*`, `[]`), chống văng lỗi cú pháp RegExp.
+   - Chỉ tìm kiếm và click các option trong dropdown đang thực sự hiển thị (`:not(.ant-select-dropdown-hidden)` và `offsetParent !== null`), không click nhầm option của dropdown cũ còn sót trong DOM.
+4. **Chuẩn hóa dấu gạch ngang (En-dash `–`, Em-dash `—`, Hyphen `-`)**:
+   - Bảng 8 chuyên khoa Nội khoa ("Thận – Tiết niệu", "Cơ – Xương – Khớp") được chuẩn hóa trước khi so khớp, đảm bảo tìm thấy đúng dòng dù HIS hiển thị loại dấu gạch ngang nào.
+5. **Nhận diện chính xác 100% Checkbox Phân loại sức khỏe (Loại I / II / III / IV / V)**:
+   - Sử dụng regex ranh giới từ `\bLoại\s*I\b`, phân biệt tuyệt đối giữa Loại I, II, III, IV, V dù có hay không có dấu hai chấm (`:`), không bị nuốt chuỗi con.
+6. **Bỏ Fallback nguy hiểm ở ô Xác nhận kết thúc khám**:
+   - Chỉ tick khi thực sự tìm thấy từ khóa "kết thúc", không fallback click vào checkbox cuối cùng của trang (tránh tick nhầm vào Loại V).
+7. **Bảo vệ Selector Mắt & Tai Mũi Họng**:
+   - Thêm bộ lọc `:not([type="hidden"])` để không bao giờ bị lệch chỉ số mảng input khi HIS chèn thêm input ẩn.
+8. **Ưu tiên nút Khám F6 trong màn hình Tiếp đón**:
+   - Khi chuyển từ Tiếp đón sang Khám, tiện ích ưu tiên click nút `Khám sức khoẻ (F6)` trong pane hiện tại để nạp đúng hồ sơ người vừa tiếp đón, tránh chuyển nhầm vào tab khám cũ của người trước.
+9. **Chống Race Condition khi bấm Lưu (F11)**:
+   - Bổ sung khoảng chờ đệm 300ms sau lệnh click Lưu trước khi kiểm tra trạng thái loading, đảm bảo request đã được gửi tới server Viettel.
+10. **Tối ưu hiệu năng & Phím tắt F6**:
+    - Ngăn Chrome cướp tiêu điểm lên thanh Omnibox khi bấm F6 bằng `e.preventDefault()`.
+    - Thay thế việc quét chuỗi `document.body.innerText` bằng việc quét cục bộ trong tab pane, loại bỏ hoàn toàn hiện tượng lag trình duyệt.
