@@ -125,5 +125,24 @@ Chúng tôi đã hoàn thành việc tái cấu trúc giao diện tiện ích **
 ---
 
 ## 7. Trạng Thái Bản Phát Hành & Kiểm Thử
-- **Kiểm thử thực chiến**: Tiện ích đã được kiểm nghiệm và hoạt động ổn định trên Google Chrome và Cốc Cốc tại môi trường thực tế 20.ytecoso.vn.
+- **Kiểm thử thực chiến**: Tiện ích đã được kiểm nghiệm và hoạt động ổn định trên Google Chrome và Cốc Cốc tại môi trường thực tế  20.ytecoso.vn.
 - **Sẵn sàng đóng gói**: Toàn bộ mã nguồn, giao diện, và tài liệu đã được kiểm tra kỹ lưỡng, sẵn sàng cho bản phát hành tiếp theo.
+
+---
+
+## 8. Cơ Chế Phân Loại Nhóm Tuổi Tự Động & Chuẩn Bị Bản v1.1.0
+
+### 🎯 A. Cơ chế phân loại nhóm tuổi chuẩn Y tế (Thông tư 32/2023/TT-BYT)
+Hệ thống HIS V20 áp dụng 3 biểu mẫu và đối tượng khám sức khỏe riêng biệt:
+1. **Dưới 6 tuổi** (`dưới 6 tuổi`): Trẻ em mầm non/nhỏ tuổi (theo dõi chu vi đầu, cân đo, phát triển thể chất và dinh dưỡng).
+2. **Từ đủ 6 tuổi đến dưới 18 tuổi** (`từ đủ 6 tuổi đến dưới 18 tuổi`): Học sinh, thanh thiếu niên (theo dõi thể lực, thị lực, các chuyên khoa, kết luận Z10).
+3. **Từ đủ 18 tuổi trở lên** (`từ đủ 18 tuổi trở lên`): Người lao động, người lớn (đầy đủ 8 chuyên khoa nội, ngoại, sản phụ khoa, chuyên khoa lẻ, kết luận Z10).
+
+### 🔍 B. 5 tầng phòng thủ nhận diện độ tuổi thông minh trong v1.1.0:
+- **Tầng 1 (Tiêu đề biểu mẫu)**: Nhận diện trực tiếp tiêu đề tài liệu đang mở trên HIS (`GIẤY KHÁM SỨC KHỎE DÙNG CHO NGƯỜI TỪ ĐỦ 18 TUỔI TRỞ LÊN`, `ĐỦ 6 TUỔI ĐẾN DƯỚI 18 TUỔI` hoặc `DƯỚI 6 TUỔI`).
+- **Tầng 2 (Ô Tuổi trực tiếp)**: Đọc giá trị ô nhập số tuổi (`tuoi`) tại form Tiếp đón nếu có.
+- **Tầng 3 (Ô Năm sinh)**: Đọc chính xác 4 số năm sinh (`* Năm` hoặc `namSinh`) để tính `Tuổi = Năm hiện tại - Năm sinh`.
+- **Tầng 4 (Ngày/Tháng/Năm)**: Tách năm sinh từ chuỗi `dd/mm/yyyy` trên trường Ngày sinh.
+- **Tầng 5 (Bộ nhớ đệm & Băng tìm kiếm)**: Tự động trích xuất năm sinh từ kết quả tra cứu CCCD trên thanh thông tin.
+- **Hiển thị trực quan**: Cung cấp dòng trạng thái **`Đối tượng tuổi: [Nhóm tuổi + Số tuổi]`** ngay trên bảng điều khiển để Bác sĩ đối soát tức thì.
+- **Định vị Dropdown theo Nhãn ngữ nghĩa**: Thay vì phụ thuộc vào số thứ tự DOM, tiện ích tự tìm theo từ khóa ngữ nghĩa (`Đối tượng`, `Mục đích`, `Kinh phí`, `Nghề nghiệp`) giúp không bao giờ bị lệch trường khi HIS cập nhật giao diện.

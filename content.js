@@ -250,6 +250,25 @@
         });
     };
 
+    // Helper tìm select theo nhãn (label hoặc span mô tả)
+    const findSelectByLabel = (container, labelKeywords) => {
+        const keywords = Array.isArray(labelKeywords) ? labelKeywords : [labelKeywords];
+        const formItems = Array.from(container.querySelectorAll('.ant-form-item, nz-form-item, div.row > div, div'));
+        for (const item of formItems) {
+            const label = item.querySelector('label, .ant-form-item-label, span.title, span');
+            if (label) {
+                const txt = label.innerText.trim().toLowerCase();
+                for (const kw of keywords) {
+                    if (txt.includes(kw.toLowerCase())) {
+                        const sel = item.querySelector('nz-select');
+                        if (sel) return sel;
+                    }
+                }
+            }
+        }
+        return null;
+    };
+
     // Helper kiểm tra thông báo lỗi nổi của hệ thống HIS (Ant Design)
     const checkHisErrorMessage = () => {
         const errorEl = document.querySelector('.ant-message-error, .ant-notification-notice-error');
@@ -266,6 +285,8 @@
         name: '',
         cccd: '',
         birthYear: '',
+        age: 0,
+        ageGroup: '',
         gender: ''
     };
 
@@ -278,7 +299,11 @@
             cachedPatient.cccd = paneKham.querySelector('input[name="so_cccd"]')?.value.trim() || '';
             const dob = paneKham.querySelector('input[placeholder="Ngày/Tháng/Năm"]')?.value.trim() || '';
             const yMatch = dob.match(/\d{4}$/);
-            if (yMatch) cachedPatient.birthYear = yMatch[0];
+            if (yMatch) {
+                cachedPatient.birthYear = yMatch[0];
+                const y = parseInt(yMatch[0], 10);
+                if (y > 1900 && y <= 2030) cachedPatient.age = new Date().getFullYear() - y;
+            }
 
             const radios = Array.from(paneKham.querySelectorAll('.ant-radio-wrapper, label, span'));
             const namRadio = radios.find(r => r.innerText.trim() === 'Nam');
@@ -301,11 +326,29 @@
                 cachedPatient.cccd = match[1].trim();
                 cachedPatient.name = match[2].trim();
                 cachedPatient.birthYear = match[3].trim();
+                const y = parseInt(match[3].trim(), 10);
+                if (y > 1900 && y <= 2030) cachedPatient.age = new Date().getFullYear() - y;
             } else {
                 const nameInp = paneTD.querySelector('input[name="tenDayDu"]');
                 if (nameInp && nameInp.value.trim()) cachedPatient.name = nameInp.value.trim();
                 const cccdInp = paneTD.querySelector('input[name="soCmt"]');
                 if (cccdInp && cccdInp.value.trim()) cachedPatient.cccd = cccdInp.value.trim();
+
+                const namInp = paneTD.querySelector('input[name="namSinh"], input[name="nam_sinh"], input[name="nam"]') ||
+                               Array.from(paneTD.querySelectorAll('input')).find(i => {
+                                   const lbl = i.closest('nz-form-item, .ant-form-item, div')?.querySelector('label, span')?.innerText || '';
+                                   return lbl.includes('Năm') && !lbl.includes('Ngày/Tháng/Năm');
+                               });
+                if (namInp && namInp.value && /^\d{4}$/.test(namInp.value.trim())) {
+                    cachedPatient.birthYear = namInp.value.trim();
+                    cachedPatient.age = new Date().getFullYear() - parseInt(namInp.value.trim(), 10);
+                }
+
+                const tuoiInp = paneTD.querySelector('input[name="tuoi"], input[name*="tuoi" i]');
+                if (tuoiInp && tuoiInp.value && !isNaN(parseInt(tuoiInp.value, 10))) {
+                    cachedPatient.age = parseInt(tuoiInp.value, 10);
+                    if (!cachedPatient.birthYear) cachedPatient.birthYear = String(new Date().getFullYear() - cachedPatient.age);
+                }
             }
 
             const radios = Array.from(paneTD.querySelectorAll('.ant-radio-wrapper, label, span'));
@@ -320,18 +363,55 @@
     }
 
     function detectAgeGroup(pane) {
+        // Tầng 1: Kiểm tra trực tiếp từ tiêu đề biểu mẫu đang mở (nếu đang ở màn hình Khám)
+        const docHeader = document.querySelector('.tab-app-main, h2, h3, h4, .ant-page-header, .title')?.innerText || '';
+        if (docHeader.includes('DƯỚI 6 TUỔI') || docHeader.includes('dưới 6 tuổi')) {
+            return 'dưới 6 tuổi';
+        }
+        if (docHeader.includes('ĐỦ 6 TUỔI ĐẾN DƯỚI 18 TUỔI') || docHeader.includes('đủ 6 tuổi đến dưới 18 tuổi')) {
+            return 'từ đủ 6 tuổi đến dưới 18 tuổi';
+        }
+        if (docHeader.includes('TỪ ĐỦ 18 TUỔI TRỞ LÊN') || docHeader.includes('từ đủ 18 tuổi trở lên')) {
+            return 'từ đủ 18 tuổi trở lên';
+        }
+
+        const activePane = pane || document.querySelector('.tab-app-main > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane-active') || document;
+
+        // Tầng 2: Tìm tuổi trực tiếp từ ô "Tuổi"
+        const tuoiInp = activePane.querySelector('input[name="tuoi"], input[name*="tuoi" i]');
+        if (tuoiInp && tuoiInp.value && !isNaN(parseInt(tuoiInp.value, 10))) {
+            const a = parseInt(tuoiInp.value, 10);
+            if (a < 6) return 'dưới 6 tuổi';
+            if (a < 18) return 'từ đủ 6 tuổi đến dưới 18 tuổi';
+            return 'từ đủ 18 tuổi trở lên';
+        }
+
+        // Tầng 3: Tìm năm sinh từ ô "* Năm"
+        const namInp = activePane.querySelector('input[name="namSinh"], input[name="nam_sinh"], input[name="nam"]') ||
+                       Array.from(activePane.querySelectorAll('input')).find(i => {
+                           const lbl = i.closest('nz-form-item, .ant-form-item, div')?.querySelector('label, span')?.innerText || '';
+                           return lbl.includes('Năm') && !lbl.includes('Ngày/Tháng/Năm');
+                       });
+        if (namInp && namInp.value && /^\d{4}$/.test(namInp.value.trim())) {
+            const y = parseInt(namInp.value.trim(), 10);
+            const a = new Date().getFullYear() - y;
+            if (a < 6) return 'dưới 6 tuổi';
+            if (a < 18) return 'từ đủ 6 tuổi đến dưới 18 tuổi';
+            return 'từ đủ 18 tuổi trở lên';
+        }
+
+        // Tầng 4: Tìm từ ô ngày sinh đầy đủ "Ngày sinh"
         let dobStr = '';
-        const dobInput = pane?.querySelector('input[name="ngaySinh"]') || 
-                         document.querySelector('input[name="ngaySinh"]') ||
-                         pane?.querySelector('input[placeholder="Ngày/Tháng/Năm"]');
+        const dobInput = activePane.querySelector('input[name="ngaySinh"]') || 
+                         activePane.querySelector('input[placeholder="Ngày/Tháng/Năm"]');
         if (dobInput && dobInput.value) {
             dobStr = dobInput.value.trim();
         } else if (cachedPatient.birthYear) {
             dobStr = cachedPatient.birthYear;
         } else {
-            const bodyText = document.body.innerText;
-            const match = bodyText.match(/(\d{10,18}\s*-\s*[^\n\r\-]+-\s*(\d{4}))/);
-            if (match && match[2]) dobStr = match[2];
+            const bodyText = activePane.innerText || document.body.innerText;
+            const match = bodyText.match(/(\d{10,18})\s*-\s*([^\n\r\-]+)-\s*(\d{4})/);
+            if (match && match[3]) dobStr = match[3];
         }
 
         if (dobStr) {
@@ -351,6 +431,22 @@
             }
         }
         return 'từ đủ 18 tuổi trở lên';
+    }
+
+    function getPatientAgeLabel() {
+        scanPatientInfo();
+        const ageGroup = detectAgeGroup();
+        let desc = '';
+        if (cachedPatient.age > 0) {
+            desc = ` (${cachedPatient.age} tuổi)`;
+        }
+        if (ageGroup === 'dưới 6 tuổi') {
+            return `Dưới 6 tuổi${desc}`;
+        }
+        if (ageGroup === 'từ đủ 6 tuổi đến dưới 18 tuổi') {
+            return `Từ đủ 6 đến dưới 18 tuổi${desc}`;
+        }
+        return `Từ đủ 18 tuổi trở lên${desc}`;
     }
 
     async function getOrDetectGender() {
@@ -376,7 +472,10 @@
         if (cachedPatient.birthYear) parts.push(cachedPatient.birthYear);
         if (parts.length > 0) {
             let res = parts.join(' - ');
-            if (cachedPatient.gender) res += ` (${cachedPatient.gender})`;
+            const meta = [];
+            if (cachedPatient.gender) meta.push(cachedPatient.gender);
+            if (cachedPatient.age > 0) meta.push(`${cachedPatient.age} tuổi`);
+            if (meta.length > 0) res += ` (${meta.join(', ')})`;
             return res;
         }
 
@@ -406,30 +505,45 @@
         if (timeInputs[0]) setAngularValue(timeInputs[0], "07:30");
 
         const ageGroup = detectAgeGroup(pane);
-        if (statusEl) statusEl.innerText = `⏳ Điền Tiếp đón (Nhóm tuổi: ${ageGroup})...`;
+        const ageLabel = getPatientAgeLabel();
+        if (statusEl) statusEl.innerText = `⏳ Điền Tiếp đón [${ageLabel}]...`;
 
         let selects = Array.from(pane.querySelectorAll('nz-select'));
 
-        if (selects[6]) await selectOption(selects[6], "00000");
-        if (selects[9]) await selectOption(selects[9], "Khám sức khoẻ định kỳ");
-        if (selects[10]) {
-            await selectOption(selects[10], ageGroup);
+        // 1. Nghề nghiệp
+        const selNgheNghiep = findSelectByLabel(pane, ['nghề nghiệp', 'nghề']) || selects[6];
+        if (selNgheNghiep) await selectOption(selNgheNghiep, "00000");
+
+        // 2. Mục đích khám
+        const selMucDich = findSelectByLabel(pane, ['mục đích khám', 'mục đích']) || selects[9];
+        if (selMucDich) await selectOption(selMucDich, "Khám sức khoẻ định kỳ");
+
+        // 3. Đối tượng khám định kỳ (Nhóm tuổi tự động)
+        const selDoiTuong = findSelectByLabel(pane, ['đối tượng khám định kỳ', 'đối tượng khám', 'đối tượng']) || selects[10];
+        if (selDoiTuong) {
+            await selectOption(selDoiTuong, ageGroup);
             await delay(300);
         }
+
+        // 4. Các đối tượng khác
         selects = Array.from(pane.querySelectorAll('nz-select'));
-        if (selects[11]) {
-            await selectOption(selects[11], "Các đối tượng khác");
+        const selChiTiet = findSelectByLabel(pane, ['đối tượng khác', 'chi tiết']) || selects[11];
+        if (selChiTiet) {
+            await selectOption(selChiTiet, "Các đối tượng khác");
             await delay(200);
         }
+
+        // 5. Nguồn kinh phí
         selects = Array.from(pane.querySelectorAll('nz-select'));
-        if (selects[12]) {
-            await selectOption(selects[12], "Xã hội hoá");
+        const selKinhPhi = findSelectByLabel(pane, ['nguồn kinh phí', 'kinh phí']) || selects[12];
+        if (selKinhPhi) {
+            await selectOption(selKinhPhi, "Xã hội hoá");
         }
 
         const taLyDo = pane.querySelector('textarea[name="lyDoVaoVien"]') || pane.querySelector('textarea');
         if (taLyDo) setAngularValue(taLyDo, "Khám sức khoẻ định kỳ");
 
-        if (statusEl) statusEl.innerText = '✅ Đã điền xong Tiếp đón bắt buộc!';
+        if (statusEl) statusEl.innerText = `✅ Đã điền xong Tiếp đón (${ageLabel})!`;
     }
 
     async function saveTiepDon(statusEl) {
@@ -993,6 +1107,19 @@
             bannerEl.style.color = '#d46b08';
         }
 
+        const agePreview = document.getElementById('txt-age-preview');
+        if (agePreview) {
+            const ageGroup = detectAgeGroup();
+            const ageLabel = getPatientAgeLabel();
+            if (ageGroup === 'dưới 6 tuổi') {
+                agePreview.innerHTML = `<span style="color:#d46b08; font-weight:bold;">${escapeHtml(ageLabel)}</span> (Trẻ em)`;
+            } else if (ageGroup === 'từ đủ 6 tuổi đến dưới 18 tuổi') {
+                agePreview.innerHTML = `<span style="color:#0958d9; font-weight:bold;">${escapeHtml(ageLabel)}</span> (Học sinh)`;
+            } else {
+                agePreview.innerHTML = `<span style="color:#389e0d; font-weight:bold;">${escapeHtml(ageLabel)}</span> (Người lớn)`;
+            }
+        }
+
         const genderPreview = document.getElementById('txt-gender-preview');
         if (genderPreview) {
             if (cachedPatient.gender === 'Nam') {
@@ -1115,6 +1242,10 @@
                         <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
                             <span>Chẩn đoán KL:</span>
                             <b style="color: #0050b3;">Z10 (Khám SK định kỳ)</b>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                            <span>Đối tượng tuổi:</span>
+                            <span id="txt-age-preview" style="font-weight: 600; color: #595959;">Tự động nhận diện</span>
                         </div>
                         <div style="display: flex; justify-content: space-between;">
                             <span>Giới tính:</span>
