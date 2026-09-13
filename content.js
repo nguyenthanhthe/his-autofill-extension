@@ -71,6 +71,7 @@
         activeTab: 'tiepdon', // 'tiepdon' | 'khambenh' | 'caidat'
         selectedLevel: '1',   // '1' | '2' | '3' | '4'
         autoPilot: false,
+        skipTienSu: false,
 
         height: '150',
         weight: '48',
@@ -364,6 +365,106 @@
         }
         return null;
     };
+
+    // ----------------------------------------------------
+    // HELPER ĐIỀN TAB TIỀN SỬ (TẤT CẢ "KHÔNG", BẢO TOÀN "CÓ")
+    // ----------------------------------------------------
+    async function fillTienSu(paneTS) {
+        if (!paneTS) paneTS = document.querySelector('.vertical-tabs .ant-tabs-tabpane-active') || document;
+
+        const isElementChecked = (el) => {
+            if (!el) return false;
+            if (el.checked) return true;
+            if (el.classList.contains('ant-checkbox-wrapper-checked') || el.classList.contains('ant-radio-wrapper-checked')) return true;
+            if (el.classList.contains('ant-checkbox-checked') || el.classList.contains('ant-radio-checked')) return true;
+            const innerChecked = el.querySelector('.ant-checkbox-checked, .ant-radio-checked, input:checked');
+            if (innerChecked) return true;
+            const input = el.tagName === 'INPUT' ? el : el.querySelector('input');
+            return input ? !!input.checked : false;
+        };
+
+        const safeClickElement = (el) => {
+            if (!el || isElementChecked(el)) return;
+            el.click();
+            const input = el.tagName === 'INPUT' ? el : el.querySelector('input');
+            if (input && !input.checked) {
+                input.checked = true;
+                if (input.dispatchEvent) {
+                    input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+                    input.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+                }
+            }
+        };
+
+        const handleCoKhongPair = (elCo, elKhong) => {
+            if (!elKhong) return;
+            // RÀNG BUỘC BẢO TOÀN: Nếu "Có" đã được chọn -> Không ghi đè
+            if (elCo && isElementChecked(elCo)) {
+                return;
+            }
+            // Nếu "Không" chưa chọn -> Chọn "Không"
+            if (!isElementChecked(elKhong)) {
+                safeClickElement(elKhong);
+            }
+        };
+
+        // 1. Quét các radio group / câu hỏi ngoài bảng (Tiền sử gia đình, Điều trị bệnh, Thai sản)
+        const allRadioGroups = Array.from(paneTS.querySelectorAll('.ant-radio-group, nz-radio-group'));
+        for (const group of allRadioGroups) {
+            const labels = Array.from(group.querySelectorAll('.ant-radio-wrapper, .ant-checkbox-wrapper, label'));
+            const elCo = labels.find(l => normalizeVn(l.innerText) === 'co');
+            const elKhong = labels.find(l => normalizeVn(l.innerText) === 'khong');
+            if (elKhong) {
+                handleCoKhongPair(elCo, elKhong);
+            }
+        }
+
+        // 2. Bảng 22 Bệnh lý nền (Tiền sử bản thân)
+        const tableRows = Array.from(paneTS.querySelectorAll('tr'));
+        for (const row of tableRows) {
+            if (row.closest('thead')) continue;
+            const tds = Array.from(row.querySelectorAll('td'));
+            if (tds.length === 0) continue;
+
+            if (tds.length >= 6) {
+                // Cấu trúc bảng đôi: [Tên bệnh 1, Có, Không, Tên bệnh 2, Có, Không]
+                const elCo1 = tds[1].querySelector('.ant-checkbox-wrapper, .ant-radio-wrapper, input') || tds[1];
+                const elKhong1 = tds[2].querySelector('.ant-checkbox-wrapper, .ant-radio-wrapper, input') || tds[2];
+                handleCoKhongPair(elCo1, elKhong1);
+
+                const elCo2 = tds[4].querySelector('.ant-checkbox-wrapper, .ant-radio-wrapper, input') || tds[4];
+                const elKhong2 = tds[5].querySelector('.ant-checkbox-wrapper, .ant-radio-wrapper, input') || tds[5];
+                handleCoKhongPair(elCo2, elKhong2);
+            } else if (tds.length >= 3) {
+                // Cấu trúc bảng đơn: [Tên bệnh, Có, Không]
+                const elCo = tds[1].querySelector('.ant-checkbox-wrapper, .ant-radio-wrapper, input') || tds[1];
+                const elKhong = tds[2].querySelector('.ant-checkbox-wrapper, .ant-radio-wrapper, input') || tds[2];
+                handleCoKhongPair(elCo, elKhong);
+            } else {
+                // Fallback: Quét các cặp Có/Không trong dòng
+                const labels = Array.from(row.querySelectorAll('.ant-checkbox-wrapper, .ant-radio-wrapper, label'));
+                const elCo = labels.find(l => normalizeVn(l.innerText) === 'co');
+                const elKhong = labels.find(l => normalizeVn(l.innerText) === 'khong');
+                if (elKhong) handleCoKhongPair(elCo, elKhong);
+            }
+            await delay(15);
+        }
+
+        // 3. Quét dự phòng các form-item / khối câu hỏi có từ khóa "gia đình", "điều trị", "thai sản"
+        const sections = Array.from(paneTS.querySelectorAll('.ant-form-item, nz-form-item, .form-group, div'));
+        for (const sec of sections) {
+            if (sec.querySelector('table, .ant-table')) continue;
+            const text = normalizeVn(sec.innerText);
+            if (text.includes('dieu tri benh') || text.includes('thai san') || text.includes('tien su benh, tat cua gia dinh') || text.includes('benh, tat cua gia dinh')) {
+                const labels = Array.from(sec.querySelectorAll('.ant-radio-wrapper, .ant-checkbox-wrapper, label'));
+                const elCo = labels.find(l => normalizeVn(l.innerText) === 'co');
+                const elKhong = labels.find(l => normalizeVn(l.innerText) === 'khong');
+                if (elKhong) {
+                    handleCoKhongPair(elCo, elKhong);
+                }
+            }
+        }
+    }
 
     // ----------------------------------------------------
     // NHẬN DIỆN THÔNG MINH: ĐỘ TUỔI & GIỚI TÍNH & BỆNH NHÂN
@@ -824,6 +925,18 @@
             statusEl.innerText = `⏳ Bắt đầu điền hồ sơ (${cfg.theLucRadio}${genderTag})...`;
         }
 
+        // 0. TIỀN SỬ (Tự động chọn "Không" cho tất cả, bảo toàn nếu đã chọn Có)
+        if (!cfg.skipTienSu) {
+            if (statusEl) statusEl.innerText = '⏳ Đang điền tab Tiền Sử (bảo toàn tiền sử bệnh)...';
+            const switchedTS = await clickSubTab('TIỀN SỬ');
+            if (switchedTS) {
+                await delay(300);
+                const paneTS = document.querySelector('.vertical-tabs .ant-tabs-tabpane-active') || document;
+                await fillTienSu(paneTS);
+                await delay(200);
+            }
+        }
+
         // 1. THỂ LỰC
         await clickSubTab('THỂ LỰC');
         const paneTL = document.querySelector('.vertical-tabs .ant-tabs-tabpane-active') || document;
@@ -1233,6 +1346,7 @@
             icdKetLuan: getElVal('cfg-icd-kl', currentCfg.icdKetLuan || 'Z10'),
             docKetLuan: getElVal('cfg-doc-ketluan', currentCfg.docKetLuan),
             gioKetThuc: getElVal('cfg-gio-kt', currentCfg.gioKetThuc || '07:45'),
+            skipTienSu: !getElCheck('cfg-autofill-tiensu', !currentCfg.skipTienSu),
             autoSave: getElCheck('cfg-auto-save', currentCfg.autoSave ?? true),
             maskPii: getElCheck('cfg-mask-pii', currentCfg.maskPii ?? true),
 
@@ -1824,6 +1938,10 @@
                                 </div>
                             </div>
                             <div style="display: flex; flex-direction: column; gap: 4px; padding-top: 4px;">
+                                <label style="font-size: 11.5px; color: #262626; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                                    <input id="cfg-autofill-tiensu" type="checkbox" ${!cfg.skipTienSu ? 'checked' : ''} style="accent-color: #1890ff;">
+                                    📋 Tự động điền Tiền sử (Tất cả "Không", bảo toàn ô "Có")
+                                </label>
                                 <label style="font-size: 11.5px; color: #262626; cursor: pointer; display: flex; align-items: center; gap: 6px;">
                                     <input id="cfg-auto-save" type="checkbox" ${cfg.autoSave ? 'checked' : ''} style="accent-color: #1890ff;">
                                     Tự động bấm Lưu (F11) sau khi điền
