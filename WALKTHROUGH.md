@@ -177,3 +177,25 @@ Nhằm đảm bảo tiện ích hoạt động tuyệt đối an toàn và tin c
 10. **Tối ưu hiệu năng & Phím tắt F6**:
     - Ngăn Chrome cướp tiêu điểm lên thanh Omnibox khi bấm F6 bằng `e.preventDefault()`.
     - Thay thế việc quét chuỗi `document.body.innerText` bằng việc quét cục bộ trong tab pane, loại bỏ hoàn toàn hiện tượng lag trình duyệt.
+
+---
+
+## 10. Điểm Mới Trong Phiên Bản v1.2.0
+
+Phiên bản **v1.2.0** tập trung vào nâng cao tính riêng tư, bảo mật thông tin người khám (PII), khắc phục triệt để các lỗi nhận diện DOM và tinh chỉnh trải nghiệm người dùng:
+
+1. **🔒 Chế độ Bảo Vệ Thông Tin Cá Nhân (PII Masking)**:
+   - Tự động làm mờ và che số CCCD (`034075******90`) cùng Họ tên (`PHẠM V*N T*`) trên banner điều khiển của tiện ích.
+   - Bổ sung tùy chọn toggle `[x] 🔒 Che thông tin người khám (Bảo vệ PII)` trong bảng Cài đặt nâng cao, cho phép cán bộ y tế chủ động bật/tắt khi cần đối chiếu.
+2. **🎯 Trợ lý Điều Hướng Thông Minh (Smart Auto-Focus)**:
+   - Khi cán bộ y tế nhấn nút điền tiếp đón mà chưa chọn hoặc chưa tìm kiếm người khám, tiện ích sẽ phát cảnh báo nhẹ nhàng và tự động đặt con trỏ chuột (focus) vào ô Tìm kiếm (`input.bns-sub-input-search-tbl-overlay`).
+   - Chuyển toàn bộ thông báo chặn người dùng từ `console.error` sang `console.warn` để không gây lỗi đỏ cảnh báo extension trong trình duyệt Chrome.
+3. **🩺 Chuẩn Hóa Thuật Ngữ Nghiệp Vụ Y Tế**:
+   - Toàn bộ giao diện thông báo, hướng dẫn và tài liệu được chuẩn hóa từ thuật ngữ "người bệnh" sang **"người khám"** / **"người đến khám"** theo đúng chuẩn quy trình khám sức khỏe định kỳ.
+4. **🐞 Khắc Phục Lỗi Nhận Diện Độ Tuổi Từ Ngày Kết Thúc Khám**:
+   - Khắc phục triệt để lỗi quét nhầm ô Ngày kết thúc khám (`nz-col-ngayKetThucKham`) chứa ngày hiện tại dẫn tới tính sai độ tuổi thành `< 1 tuổi`.
+   - Giới hạn phạm vi quét ngày sinh chuẩn xác vào `.nz-col-ngay_sinh` và đối chiếu tiêu đề văn bản hành chính.
+5. **🐞 Sửa Lỗi Tự Động Tick Ô "Xác nhận kết thúc khám"**:
+   - Cải tiến bộ chọn đa tầng `div[id*="ket_thuc_kham" i] .ant-checkbox-wrapper` giúp tick chính xác 100% khi điền kết luận khám.
+6. **🐞 Tinh Chỉnh Phân Loại Sức Khỏe Chữ Số La Mã**:
+   - Regex ranh giới từ phân biệt độc lập Loại I, II, III, IV, V, đảm bảo khi chọn Loại II hệ thống tự bỏ chọn Loại I mà không gây xung đột trạng thái checkbox Ant Design.
