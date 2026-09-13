@@ -668,7 +668,7 @@
                 searchBox.focus();
                 searchBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
-            throw new Error('Chưa có thông tin người khám! Hãy gõ số CCCD hoặc Tên vào ô Tìm kiếm phía trên rồi chọn người bệnh.');
+            throw new Error('Chưa có thông tin người khám! Hãy gõ số CCCD hoặc Tên vào ô Tìm kiếm phía trên rồi chọn người khám.');
         }
 
         const timeInputs = Array.from(pane.querySelectorAll('input[placeholder="__:__"]'));
