@@ -199,3 +199,22 @@ Phiên bản **v1.2.0** tập trung vào nâng cao tính riêng tư, bảo mật
    - Cải tiến bộ chọn đa tầng `div[id*="ket_thuc_kham" i] .ant-checkbox-wrapper` giúp tick chính xác 100% khi điền kết luận khám.
 6. **🐞 Tinh Chỉnh Phân Loại Sức Khỏe Chữ Số La Mã**:
    - Regex ranh giới từ phân biệt độc lập Loại I, II, III, IV, V, đảm bảo khi chọn Loại II hệ thống tự bỏ chọn Loại I mà không gây xung đột trạng thái checkbox Ant Design.
+
+---
+
+## 11. Điểm Mới Trong Phiên Bản v1.2.1
+
+Phiên bản **v1.2.1** giải quyết bài toán trải nghiệm hiển thị và chống tràn màn hình (Viewport Overflow) trên các màn hình máy trạm y tế độ phân giải phổ thông (1366x768):
+
+1. **📌 Ghim Cố Định Thanh Header & Nút Thu Nhỏ (Sticky Header)**:
+   - Chuyển layout bảng điều khiển `#his-tool-control-panel` sang `display: flex; flex-direction: column;` kết hợp `max-height: calc(100vh - 30px);`.
+   - Thanh Header (`#his-panel-header`) và thanh Tab (`#his-panel-tabs`) được gắn `flex-shrink: 0;`, đảm bảo luôn nằm 100% trong khung nhìn trình duyệt. Nút **`➖ Thu nhỏ`** không bao giờ bị đẩy vượt mép trên màn hình.
+   - Thân bảng (`#his-panel-body`) sử dụng `flex: 1; min-height: 0; overflow-y: auto;` giúp tự động co giãn và cuộn nội dung độc lập.
+2. **📂 Thiết Kế Accordion (Gập/Mở) Chuẩn Native Cho Mục Cài Đặt**:
+   - Nhóm 1 (Chỉ số thể lực) và Nhóm 2 (Thị lực mắt): Mặc định mở (`<details open>`).
+   - Nhóm 3 (Bác sĩ 7 Chuyên khoa): Mặc định **GẬP GỌN** (`<details>`), tiết kiệm hơn 200px chiều cao cho bảng điều khiển, bác sĩ chỉ cần bấm vào thanh tiêu đề khi cần thay đổi phân công.
+   - Nhóm 4 (Kết luận & Chẩn đoán Z10): Mặc định mở (`<details open>`).
+   - Nhóm 5 (16 Nội dung khám mẫu): Tiếp tục duy trì gập gọn (`<details>`).
+3. **⚡ Thu Nhỏ Tối Đa Không Gian Làm Việc**:
+   - Khi bấm `➖ Thu nhỏ`, tiện ích ẩn đồng thời cả thanh Tab (`#his-panel-tabs`) lẫn phần thân (`#his-panel-body`), chỉ giữ lại thanh tiêu đề mỏng giúp giải phóng toàn bộ không gian làm việc của HIS cho bác sĩ.
+   - Bấm `➕ Mở rộng` sẽ bung lại toàn bộ giao diện làm việc nguyên trạng.

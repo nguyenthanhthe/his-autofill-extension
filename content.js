@@ -1364,6 +1364,9 @@
         panel.style.bottom = '15px';
         panel.style.right = '15px';
         panel.style.width = '460px';
+        panel.style.maxHeight = 'calc(100vh - 30px)';
+        panel.style.display = 'flex';
+        panel.style.flexDirection = 'column';
         panel.style.backgroundColor = '#ffffff';
         panel.style.borderRadius = '12px';
         panel.style.boxShadow = '0 10px 32px rgba(0,0,0,0.18)';
@@ -1374,7 +1377,7 @@
 
         panel.innerHTML = `
             <!-- HEADER TỐI GIẢN CHUẨN Y TẾ -->
-            <div style="background: #fafafa; border-bottom: 1px solid #e8e8e8; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center;">
+            <div id="his-panel-header" style="background: #fafafa; border-bottom: 1px solid #e8e8e8; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
                 <div style="display: flex; align-items: center; gap: 8px;">
                     <span style="font-size: 16px;">🏥</span>
                     <b style="font-size: 14.5px; color: #1f1f1f; letter-spacing: 0.2px;">HIS V20 - HỖ TRỢ KHÁM SỨC KHỎE</b>
@@ -1385,7 +1388,7 @@
             </div>
 
             <!-- THANH ĐIỀU HƯỚNG 3 MODULE / TAB -->
-            <div style="display: flex; background: #ffffff; border-bottom: 1px solid #f0f0f0;">
+            <div id="his-panel-tabs" style="display: flex; background: #ffffff; border-bottom: 1px solid #f0f0f0; flex-shrink: 0;">
                 <button id="tab-btn-tiepdon" type="button" style="flex: 1; padding: 9px 4px; background: none; border: none; font-size: 13px; cursor: pointer; transition: all 0.2s;">
                     📋 1. Tiếp Đón
                 </button>
@@ -1398,7 +1401,7 @@
             </div>
 
             <!-- PHẦN THÂN BẢNG ĐIỀU KHIỂN -->
-            <div id="his-panel-body" style="padding: 12px 14px; font-size: 13px; color: #262626; max-height: 580px; overflow-y: auto;">
+            <div id="his-panel-body" style="padding: 12px 14px; font-size: 13px; color: #262626; flex: 1; min-height: 0; overflow-y: auto;">
                 
                 <!-- BANNER BỆNH NHÂN HIỆN TẠI TỪ Ô TÌM KIẾM -->
                 <div id="his-patient-banner" style="padding: 8px 10px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 12.5px; margin-bottom: 10px; word-break: break-all;">
@@ -1497,40 +1500,46 @@
                     </div>
 
                     <!-- THỂ LỰC & CHỈ SỐ -->
-                    <div style="margin-bottom: 12px; border-bottom: 1px solid #f0f0f0; padding-bottom: 10px;">
-                        <b style="font-size: 13px; color: #262626;">1. Chỉ số thể lực & Sinh hiệu:</b>
-                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 6px;">
-                            <div>
-                                <label style="font-size: 11px; color: #595959; display: block;">Cao (cm):</label>
-                                <input id="cfg-height" type="text" value="${escapeHtml(cfg.height)}" style="width: 100%; height: 30px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; box-sizing: border-box;">
+                    <details open style="margin-bottom: 8px; border: 1px solid #ebebeb; border-radius: 6px; padding: 6px 10px; background: #fff;">
+                        <summary style="font-size: 12.5px; font-weight: 600; color: #262626; cursor: pointer; user-select: none;">
+                            📏 1. Chỉ số thể lực & Sinh hiệu:
+                        </summary>
+                        <div style="margin-top: 6px;">
+                            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;">
+                                <div>
+                                    <label style="font-size: 11px; color: #595959; display: block;">Cao (cm):</label>
+                                    <input id="cfg-height" type="text" value="${escapeHtml(cfg.height)}" style="width: 100%; height: 30px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; box-sizing: border-box;">
+                                </div>
+                                <div>
+                                    <label style="font-size: 11px; color: #595959; display: block;">Nặng (kg):</label>
+                                    <input id="cfg-weight" type="text" value="${escapeHtml(cfg.weight)}" style="width: 100%; height: 30px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; box-sizing: border-box;">
+                                </div>
+                                <div>
+                                    <label style="font-size: 11px; color: #595959; display: block;">Mạch (l/p):</label>
+                                    <input id="cfg-pulse" type="text" value="${escapeHtml(cfg.pulse)}" style="width: 100%; height: 30px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; box-sizing: border-box;">
+                                </div>
+                                <div>
+                                    <label style="font-size: 11px; color: #595959; display: block;">Huyết áp:</label>
+                                    <input id="cfg-bp" type="text" value="${escapeHtml(cfg.bp)}" style="width: 100%; height: 30px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; box-sizing: border-box;">
+                                </div>
                             </div>
-                            <div>
-                                <label style="font-size: 11px; color: #595959; display: block;">Nặng (kg):</label>
-                                <input id="cfg-weight" type="text" value="${escapeHtml(cfg.weight)}" style="width: 100%; height: 30px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; box-sizing: border-box;">
-                            </div>
-                            <div>
-                                <label style="font-size: 11px; color: #595959; display: block;">Mạch (l/p):</label>
-                                <input id="cfg-pulse" type="text" value="${escapeHtml(cfg.pulse)}" style="width: 100%; height: 30px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; box-sizing: border-box;">
-                            </div>
-                            <div>
-                                <label style="font-size: 11px; color: #595959; display: block;">Huyết áp:</label>
-                                <input id="cfg-bp" type="text" value="${escapeHtml(cfg.bp)}" style="width: 100%; height: 30px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; box-sizing: border-box;">
+                            <div style="margin-top: 6px; display: flex; justify-content: space-between; align-items: center;">
+                                <span style="font-size: 11.5px; color: #595959;">Phân loại thể lực:</span>
+                                <select id="cfg-theluc-pl" style="height: 28px; padding: 2px 8px; border-radius: 4px; border: 1px solid #d9d9d9; font-weight: 600; font-size: 12px;">
+                                    <option value="Loại 1" ${isLoai1(cfg.theLucRadio) ? 'selected' : ''}>Loại 1 (Tốt)</option>
+                                    <option value="Loại 2" ${isLoai2(cfg.theLucRadio) ? 'selected' : ''}>Loại 2 (Khá)</option>
+                                    <option value="Loại 3" ${isLoai3(cfg.theLucRadio) ? 'selected' : ''}>Loại 3 (Trung bình)</option>
+                                    <option value="Loại 4" ${isLoai4(cfg.theLucRadio) ? 'selected' : ''}>Loại 4 (Yếu)</option>
+                                </select>
                             </div>
                         </div>
-                        <div style="margin-top: 6px; display: flex; justify-content: space-between; align-items: center;">
-                            <span style="font-size: 11.5px; color: #595959;">Phân loại thể lực:</span>
-                            <select id="cfg-theluc-pl" style="height: 28px; padding: 2px 8px; border-radius: 4px; border: 1px solid #d9d9d9; font-weight: 600; font-size: 12px;">
-                                <option value="Loại 1" ${isLoai1(cfg.theLucRadio) ? 'selected' : ''}>Loại 1 (Tốt)</option>
-                                <option value="Loại 2" ${isLoai2(cfg.theLucRadio) ? 'selected' : ''}>Loại 2 (Khá)</option>
-                                <option value="Loại 3" ${isLoai3(cfg.theLucRadio) ? 'selected' : ''}>Loại 3 (Trung bình)</option>
-                                <option value="Loại 4" ${isLoai4(cfg.theLucRadio) ? 'selected' : ''}>Loại 4 (Yếu)</option>
-                            </select>
-                        </div>
-                    </div>
+                    </details>
 
                     <!-- THỊ LỰC MẮT ĐỘC LẬP (KHÔNG BỊ GHI ĐÈ) -->
-                    <div style="margin-bottom: 12px; border-bottom: 1px solid #f0f0f0; padding-bottom: 10px;">
-                        <b style="font-size: 13px; color: #262626;">2. Thị lực mắt (Cấu hình độc lập):</b>
+                    <details open style="margin-bottom: 8px; border: 1px solid #ebebeb; border-radius: 6px; padding: 6px 10px; background: #fff;">
+                        <summary style="font-size: 12.5px; font-weight: 600; color: #262626; cursor: pointer; user-select: none;">
+                            👁️ 2. Thị lực mắt (Cấu hình độc lập):
+                        </summary>
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px;">
                             <div>
                                 <label style="font-size: 11px; color: #595959; display: block;">Mắt Phải (không kính):</label>
@@ -1541,98 +1550,107 @@
                                 <input id="cfg-mat-trai" type="text" value="${escapeHtml(cfg.matTrai)}" style="width: 100%; height: 28px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; box-sizing: border-box;">
                             </div>
                         </div>
-                    </div>
+                    </details>
 
-                    <!-- 7 CHUYÊN KHOA & BÁC SĨ -->
-                    <div style="margin-bottom: 12px; border-bottom: 1px solid #f0f0f0; padding-bottom: 10px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                            <b style="font-size: 13px; color: #262626;">3. Bác sĩ 7 Chuyên khoa:</b>
-                            <select id="cfg-pl-ck" style="height: 26px; font-size: 11.5px; border-radius: 4px; border: 1px solid #d9d9d9;">
-                                <option value="Loại I: Rất khỏe" ${isLoai1(cfg.plChuyenKhoa) ? 'selected' : ''}>Loại I: Rất khỏe</option>
-                                <option value="Loại II: Khỏe" ${isLoai2(cfg.plChuyenKhoa) ? 'selected' : ''}>Loại II: Khỏe</option>
-                                <option value="Loại III: Trung bình" ${isLoai3(cfg.plChuyenKhoa) ? 'selected' : ''}>Loại III: Trung bình</option>
-                                <option value="Loại IV: Yếu" ${isLoai4(cfg.plChuyenKhoa) ? 'selected' : ''}>Loại IV: Yếu</option>
-                            </select>
-                        </div>
-
-                        <table style="width: 100%; font-size: 12px; border-collapse: collapse;">
-                            <tr style="background: #fafafa; color: #595959;">
-                                <th style="padding: 4px 6px; border: 1px solid #f0f0f0; text-align: left;">Chuyên khoa</th>
-                                <th style="padding: 4px 6px; border: 1px solid #f0f0f0; text-align: center; width: 75px;">Mã BS</th>
-                                <th style="padding: 4px 6px; border: 1px solid #f0f0f0; text-align: center; width: 60px;">Bỏ qua</th>
-                            </tr>
-                            <tr>
-                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0;">Nội khoa</td>
-                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-doc-noi" type="text" value="${escapeHtml(cfg.docNoiKhoa)}" style="width: 65px; height: 24px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;"></td>
-                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-skip-noi" type="checkbox" ${cfg.skipNoiKhoa ? 'checked' : ''}></td>
-                            </tr>
-                            <tr style="background: #fcfcfc;">
-                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0;">Ngoại khoa</td>
-                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-doc-ngoai" type="text" value="${escapeHtml(cfg.docNgoaiKhoa)}" style="width: 65px; height: 24px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;"></td>
-                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-skip-ngoai" type="checkbox" ${cfg.skipNgoaiKhoa ? 'checked' : ''}></td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0;">Da liễu</td>
-                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-doc-dalieu" type="text" value="${escapeHtml(cfg.docDaLieu)}" style="width: 65px; height: 24px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;"></td>
-                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-skip-dalieu" type="checkbox" ${cfg.skipDaLieu ? 'checked' : ''}></td>
-                            </tr>
-                            <tr style="background: #fcfcfc;">
-                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0;">Sản phụ khoa (Nữ)</td>
-                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-doc-san" type="text" value="${escapeHtml(cfg.docSanPhuKhoa)}" style="width: 65px; height: 24px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px;"></td>
-                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-skip-san" type="checkbox" ${cfg.skipSanPhuKhoa ? 'checked' : ''} title="Nam sẽ tự động bỏ qua"></td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0;">Mắt</td>
-                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-doc-mat" type="text" value="${escapeHtml(cfg.docMat)}" style="width: 65px; height: 24px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;"></td>
-                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-skip-mat" type="checkbox" ${cfg.skipMat ? 'checked' : ''}></td>
-                            </tr>
-                            <tr style="background: #fcfcfc;">
-                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0;">Tai Mũi Họng</td>
-                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-doc-tmh" type="text" value="${escapeHtml(cfg.docTmh)}" style="width: 65px; height: 24px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;"></td>
-                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-skip-tmh" type="checkbox" ${cfg.skipTmh ? 'checked' : ''}></td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0;">Răng Hàm Mặt</td>
-                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-doc-rhm" type="text" value="${escapeHtml(cfg.docRhm)}" style="width: 65px; height: 24px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;"></td>
-                                <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-skip-rhm" type="checkbox" ${cfg.skipRhm ? 'checked' : ''}></td>
-                            </tr>
-                        </table>
-                    </div>
-
-                    <!-- KẾT LUẬN & CHẨN ĐOÁN Z10 -->
-                    <div style="margin-bottom: 12px; border-bottom: 1px solid #f0f0f0; padding-bottom: 10px;">
-                        <b style="font-size: 13px; color: #262626;">4. Kết luận & Chẩn đoán:</b>
-                        <div style="display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 6px; margin-top: 6px;">
-                            <div>
-                                <label style="font-size: 11px; color: #595959; display: block;">Phân loại KSK:</label>
-                                <select id="cfg-pl-ketluan" style="width: 100%; height: 30px; font-size: 11.5px; border-radius: 4px; border: 1px solid #d9d9d9; font-weight: 600;">
-                                    <option value="Loại I: Rất khỏe" ${isLoai1(cfg.plKetLuan) ? 'selected' : ''}>Loại I: Rất khỏe</option>
-                                    <option value="Loại II: Khỏe" ${isLoai2(cfg.plKetLuan) ? 'selected' : ''}>Loại II: Khỏe</option>
-                                    <option value="Loại III: Trung bình" ${isLoai3(cfg.plKetLuan) ? 'selected' : ''}>Loại III: Trung bình</option>
-                                    <option value="Loại IV: Yếu" ${isLoai4(cfg.plKetLuan) ? 'selected' : ''}>Loại IV: Yếu</option>
+                    <!-- 7 CHUYÊN KHOA & BÁC SĨ (MẶC ĐỊNH GẬP GỌN) -->
+                    <details style="margin-bottom: 8px; border: 1px solid #ebebeb; border-radius: 6px; padding: 6px 10px; background: #fff;">
+                        <summary style="font-size: 12.5px; font-weight: 600; color: #1890ff; cursor: pointer; user-select: none;">
+                            👨‍⚕️ 3. Bác sĩ 7 Chuyên khoa (Bấm để xem/sửa)
+                        </summary>
+                        <div style="margin-top: 6px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                <span style="font-size: 12px; color: #595959;">Phân loại chung:</span>
+                                <select id="cfg-pl-ck" style="height: 26px; font-size: 11.5px; border-radius: 4px; border: 1px solid #d9d9d9;">
+                                    <option value="Loại I: Rất khỏe" ${isLoai1(cfg.plChuyenKhoa) ? 'selected' : ''}>Loại I: Rất khỏe</option>
+                                    <option value="Loại II: Khỏe" ${isLoai2(cfg.plChuyenKhoa) ? 'selected' : ''}>Loại II: Khỏe</option>
+                                    <option value="Loại III: Trung bình" ${isLoai3(cfg.plChuyenKhoa) ? 'selected' : ''}>Loại III: Trung bình</option>
+                                    <option value="Loại IV: Yếu" ${isLoai4(cfg.plChuyenKhoa) ? 'selected' : ''}>Loại IV: Yếu</option>
                                 </select>
                             </div>
-                            <div>
-                                <label style="font-size: 11px; color: #595959; display: block;">Mã bệnh KL:</label>
-                                <input id="cfg-icd-kl" type="text" value="${escapeHtml(cfg.icdKetLuan || 'Z10')}" placeholder="Z10" style="width: 100%; height: 30px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; box-sizing: border-box;">
-                            </div>
-                            <div>
-                                <label style="font-size: 11px; color: #595959; display: block;">BS Kết luận:</label>
-                                <input id="cfg-doc-ketluan" type="text" value="${escapeHtml(cfg.docKetLuan)}" placeholder="Mã BS" style="width: 100%; height: 30px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; box-sizing: border-box;">
-                            </div>
-                        </div>
 
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
-                            <label style="font-size: 12px; color: #262626; cursor: pointer; display: flex; align-items: center; gap: 6px;">
-                                <input id="cfg-auto-save" type="checkbox" ${cfg.autoSave ? 'checked' : ''} style="accent-color: #1890ff;">
-                                Tự động bấm Lưu (F11)
-                            </label>
-                            <div style="font-size: 12px; display: flex; align-items: center; gap: 4px;">
-                                <span style="color: #595959;">Giờ KT:</span>
-                                <input id="cfg-gio-kt" type="text" value="${escapeHtml(cfg.gioKetThuc)}" style="width: 60px; height: 26px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold;">
+                            <table style="width: 100%; font-size: 12px; border-collapse: collapse;">
+                                <tr style="background: #fafafa; color: #595959;">
+                                    <th style="padding: 4px 6px; border: 1px solid #f0f0f0; text-align: left;">Chuyên khoa</th>
+                                    <th style="padding: 4px 6px; border: 1px solid #f0f0f0; text-align: center; width: 75px;">Mã BS</th>
+                                    <th style="padding: 4px 6px; border: 1px solid #f0f0f0; text-align: center; width: 60px;">Bỏ qua</th>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 3px 6px; border: 1px solid #f0f0f0;">Nội khoa</td>
+                                    <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-doc-noi" type="text" value="${escapeHtml(cfg.docNoiKhoa)}" style="width: 65px; height: 24px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;"></td>
+                                    <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-skip-noi" type="checkbox" ${cfg.skipNoiKhoa ? 'checked' : ''}></td>
+                                </tr>
+                                <tr style="background: #fcfcfc;">
+                                    <td style="padding: 3px 6px; border: 1px solid #f0f0f0;">Ngoại khoa</td>
+                                    <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-doc-ngoai" type="text" value="${escapeHtml(cfg.docNgoaiKhoa)}" style="width: 65px; height: 24px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;"></td>
+                                    <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-skip-ngoai" type="checkbox" ${cfg.skipNgoaiKhoa ? 'checked' : ''}></td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 3px 6px; border: 1px solid #f0f0f0;">Da liễu</td>
+                                    <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-doc-dalieu" type="text" value="${escapeHtml(cfg.docDaLieu)}" style="width: 65px; height: 24px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;"></td>
+                                    <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-skip-dalieu" type="checkbox" ${cfg.skipDaLieu ? 'checked' : ''}></td>
+                                </tr>
+                                <tr style="background: #fcfcfc;">
+                                    <td style="padding: 3px 6px; border: 1px solid #f0f0f0;">Sản phụ khoa (Nữ)</td>
+                                    <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-doc-san" type="text" value="${escapeHtml(cfg.docSanPhuKhoa)}" style="width: 65px; height: 24px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px;"></td>
+                                    <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-skip-san" type="checkbox" ${cfg.skipSanPhuKhoa ? 'checked' : ''} title="Nam sẽ tự động bỏ qua"></td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 3px 6px; border: 1px solid #f0f0f0;">Mắt</td>
+                                    <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-doc-mat" type="text" value="${escapeHtml(cfg.docMat)}" style="width: 65px; height: 24px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;"></td>
+                                    <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-skip-mat" type="checkbox" ${cfg.skipMat ? 'checked' : ''}></td>
+                                </tr>
+                                <tr style="background: #fcfcfc;">
+                                    <td style="padding: 3px 6px; border: 1px solid #f0f0f0;">Tai Mũi Họng</td>
+                                    <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-doc-tmh" type="text" value="${escapeHtml(cfg.docTmh)}" style="width: 65px; height: 24px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;"></td>
+                                    <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-skip-tmh" type="checkbox" ${cfg.skipTmh ? 'checked' : ''}></td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 3px 6px; border: 1px solid #f0f0f0;">Răng Hàm Mặt</td>
+                                    <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-doc-rhm" type="text" value="${escapeHtml(cfg.docRhm)}" style="width: 65px; height: 24px; text-align: center; border: 1px solid #d9d9d9; border-radius: 3px; font-weight: bold;"></td>
+                                    <td style="padding: 3px 6px; border: 1px solid #f0f0f0; text-align: center;"><input id="cfg-skip-rhm" type="checkbox" ${cfg.skipRhm ? 'checked' : ''}></td>
+                                </tr>
+                            </table>
+                        </div>
+                    </details>
+
+                    <!-- KẾT LUẬN & CHẨN ĐOÁN Z10 -->
+                    <details open style="margin-bottom: 8px; border: 1px solid #ebebeb; border-radius: 6px; padding: 6px 10px; background: #fff;">
+                        <summary style="font-size: 12.5px; font-weight: 600; color: #262626; cursor: pointer; user-select: none;">
+                            🩺 4. Kết luận & Chẩn đoán:
+                        </summary>
+                        <div style="margin-top: 6px;">
+                            <div style="display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 6px;">
+                                <div>
+                                    <label style="font-size: 11px; color: #595959; display: block;">Phân loại KSK:</label>
+                                    <select id="cfg-pl-ketluan" style="width: 100%; height: 30px; font-size: 11.5px; border-radius: 4px; border: 1px solid #d9d9d9; font-weight: 600;">
+                                        <option value="Loại I: Rất khỏe" ${isLoai1(cfg.plKetLuan) ? 'selected' : ''}>Loại I: Rất khỏe</option>
+                                        <option value="Loại II: Khỏe" ${isLoai2(cfg.plKetLuan) ? 'selected' : ''}>Loại II: Khỏe</option>
+                                        <option value="Loại III: Trung bình" ${isLoai3(cfg.plKetLuan) ? 'selected' : ''}>Loại III: Trung bình</option>
+                                        <option value="Loại IV: Yếu" ${isLoai4(cfg.plKetLuan) ? 'selected' : ''}>Loại IV: Yếu</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="font-size: 11px; color: #595959; display: block;">Mã bệnh KL:</label>
+                                    <input id="cfg-icd-kl" type="text" value="${escapeHtml(cfg.icdKetLuan || 'Z10')}" placeholder="Z10" style="width: 100%; height: 30px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; box-sizing: border-box;">
+                                </div>
+                                <div>
+                                    <label style="font-size: 11px; color: #595959; display: block;">BS Kết luận:</label>
+                                    <input id="cfg-doc-ketluan" type="text" value="${escapeHtml(cfg.docKetLuan)}" placeholder="Mã BS" style="width: 100%; height: 30px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold; box-sizing: border-box;">
+                                </div>
+                            </div>
+
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+                                <label style="font-size: 12px; color: #262626; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                                    <input id="cfg-auto-save" type="checkbox" ${cfg.autoSave ? 'checked' : ''} style="accent-color: #1890ff;">
+                                    Tự động bấm Lưu (F11)
+                                </label>
+                                <div style="font-size: 12px; display: flex; align-items: center; gap: 4px;">
+                                    <span style="color: #595959;">Giờ KT:</span>
+                                    <input id="cfg-gio-kt" type="text" value="${escapeHtml(cfg.gioKetThuc)}" style="width: 60px; height: 26px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; font-weight: bold;">
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    </details>
 
                     <!-- 16 NỘI DUNG KHÁM MẪU (ACCORDION THU GỌN) -->
                     <details style="margin-bottom: 10px; border: 1px dashed #d9d9d9; border-radius: 6px; padding: 6px 10px;">
@@ -1764,11 +1782,13 @@
         // Nút thu nhỏ / mở rộng
         let isCollapsed = false;
         const body = document.getElementById('his-panel-body');
+        const tabs = document.getElementById('his-panel-tabs');
         const toggleBtn = document.getElementById('his-panel-toggle-btn');
         if (toggleBtn) {
             toggleBtn.onclick = () => {
                 isCollapsed = !isCollapsed;
-                body.style.display = isCollapsed ? 'none' : 'block';
+                if (body) body.style.display = isCollapsed ? 'none' : 'block';
+                if (tabs) tabs.style.display = isCollapsed ? 'none' : 'flex';
                 toggleBtn.innerText = isCollapsed ? '➕ Mở rộng' : '➖ Thu nhỏ';
             };
         }
