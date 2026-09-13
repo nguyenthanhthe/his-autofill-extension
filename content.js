@@ -24,6 +24,19 @@
         return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
+    const isLoai1 = txt => (/\bLoại\s*I\b/i.test(txt) && !/\bLoại\s*(II|III|IV|V)\b/i.test(txt)) || /\bLoại\s*1\b/i.test(txt);
+    const isLoai2 = txt => (/\bLoại\s*II\b/i.test(txt) && !/\bLoại\s*III\b/i.test(txt)) || /\bLoại\s*2\b/i.test(txt);
+    const isLoai3 = txt => /\bLoại\s*III\b/i.test(txt) || /\bLoại\s*3\b/i.test(txt);
+    const isLoai4 = txt => /\bLoại\s*IV\b/i.test(txt) || /\bLoại\s*4\b/i.test(txt);
+
+    function getHealthLevelMatcher(levelOrStr) {
+        const s = String(levelOrStr || '');
+        if (isLoai2(s)) return isLoai2;
+        if (isLoai3(s)) return isLoai3;
+        if (isLoai4(s)) return isLoai4;
+        return isLoai1;
+    }
+
     const defaultExamTexts = {
         tuanHoan: "T1T2 đều rõ không có tiếng bệnh lý",
         hoHap: "Lồng ngực cân đối di động đều theo nhịp thở,phổi không có ral",
@@ -170,8 +183,19 @@
         const cleanMatch = textMatch.trim().toLowerCase();
         // Kiểm tra xem đã đúng giá trị chưa để tránh mở dropdown không cần thiết
         const currentSelected = selectEl.querySelector('.ant-select-selection-item')?.innerText?.trim() || '';
-        if (currentSelected && (currentSelected.toLowerCase() === cleanMatch || currentSelected.toLowerCase().includes(cleanMatch))) {
-            return true;
+        if (currentSelected) {
+            const curLower = currentSelected.toLowerCase();
+            if (curLower === cleanMatch) return true;
+            if (/\bLoại\s*(I|II|III|IV|V|1|2|3|4|5)\b/i.test(curLower) || /\bLoại\s*(I|II|III|IV|V|1|2|3|4|5)\b/i.test(cleanMatch)) {
+                if ((isLoai1(curLower) && isLoai1(cleanMatch)) ||
+                    (isLoai2(curLower) && isLoai2(cleanMatch)) ||
+                    (isLoai3(curLower) && isLoai3(cleanMatch)) ||
+                    (isLoai4(curLower) && isLoai4(cleanMatch))) {
+                    return true;
+                }
+            } else if (curLower.includes(cleanMatch)) {
+                return true;
+            }
         }
 
         const topControl = selectEl.querySelector('nz-select-top-control') || selectEl;
@@ -202,10 +226,17 @@
 
             let match = wordRegex ? options.find(o => wordRegex.test(o.innerText)) : null;
             if (!match) {
-                match = options.find(o => o.innerText.trim().toLowerCase().startsWith(cleanMatch));
-            }
-            if (!match) {
-                match = options.find(o => o.innerText.toLowerCase().includes(cleanMatch));
+                match = options.find(o => {
+                    const optTxt = o.innerText.trim().toLowerCase();
+                    if (optTxt === cleanMatch) return true;
+                    if (/\bLoại\s*(I|II|III|IV|V|1|2|3|4|5)\b/i.test(optTxt) || /\bLoại\s*(I|II|III|IV|V|1|2|3|4|5)\b/i.test(cleanMatch)) {
+                        return (isLoai1(optTxt) && isLoai1(cleanMatch)) ||
+                               (isLoai2(optTxt) && isLoai2(cleanMatch)) ||
+                               (isLoai3(optTxt) && isLoai3(cleanMatch)) ||
+                               (isLoai4(optTxt) && isLoai4(cleanMatch));
+                    }
+                    return optTxt.startsWith(cleanMatch) || optTxt.includes(cleanMatch);
+                });
             }
 
             if (match) {
@@ -708,7 +739,11 @@
         if (inputsTL[4] && cfg.bp) setAngularValue(inputsTL[4], cfg.bp);
 
         const radiosTL = Array.from(paneTL.querySelectorAll('.ant-radio-wrapper'));
-        const targetRadioTL = radiosTL.find(r => r.innerText.trim() === cfg.theLucRadio);
+        const tlMatcher = getHealthLevelMatcher(cfg.theLucRadio || cfg.selectedLevel || 'Loại 1');
+        let targetRadioTL = radiosTL.find(r => tlMatcher(r.innerText));
+        if (!targetRadioTL) {
+            targetRadioTL = radiosTL.find(r => r.innerText.trim() === cfg.theLucRadio);
+        }
         if (targetRadioTL && !targetRadioTL.classList.contains('ant-radio-wrapper-checked')) {
             targetRadioTL.click();
         }
@@ -815,26 +850,15 @@
 
         // Checkbox Phân loại sức khỏe (Loại I / II / III / IV / V)
         const cbsKL = Array.from(paneKL.querySelectorAll('.ant-checkbox-wrapper'));
-        const isLoai1 = txt => /\bLoại\s*I\b/i.test(txt) && !/\bLoại\s*(II|III|IV|V)\b/i.test(txt);
-        const isLoai2 = txt => /\bLoại\s*II\b/i.test(txt) && !/\bLoại\s*III\b/i.test(txt);
-        const isLoai3 = txt => /\bLoại\s*III\b/i.test(txt);
-        const isLoai4 = txt => /\bLoại\s*IV\b/i.test(txt);
-
-        const targetCb = cbsKL.find(c => {
-            const txt = c.innerText;
-            if (cfg.plKetLuan.includes('Loại I') && isLoai1(txt)) return true;
-            if (cfg.plKetLuan.includes('Loại II') && isLoai2(txt)) return true;
-            if (cfg.plKetLuan.includes('Loại III') && isLoai3(txt)) return true;
-            if (cfg.plKetLuan.includes('Loại IV') && isLoai4(txt)) return true;
-            return false;
-        });
+        const klMatcher = getHealthLevelMatcher(cfg.plKetLuan || cfg.selectedLevel || 'Loại I');
+        const targetCb = cbsKL.find(c => klMatcher(c.innerText));
 
         if (targetCb && !targetCb.classList.contains('ant-checkbox-wrapper-checked')) {
             targetCb.click();
         }
         // Bỏ chọn các loại khác
         cbsKL.forEach(c => {
-            if (c !== targetCb && /\bLoại\s*(I|II|III|IV|V)\b/i.test(c.innerText)) {
+            if (c !== targetCb && /\bLoại\s*(I|II|III|IV|V|1|2|3|4|5)\b/i.test(c.innerText)) {
                 if (c.classList.contains('ant-checkbox-wrapper-checked')) {
                     c.click();
                 }
@@ -1377,10 +1401,10 @@
                         <div style="margin-top: 6px; display: flex; justify-content: space-between; align-items: center;">
                             <span style="font-size: 11.5px; color: #595959;">Phân loại thể lực:</span>
                             <select id="cfg-theluc-pl" style="height: 28px; padding: 2px 8px; border-radius: 4px; border: 1px solid #d9d9d9; font-weight: 600; font-size: 12px;">
-                                <option value="Loại 1" ${cfg.theLucRadio === 'Loại 1' ? 'selected' : ''}>Loại 1 (Tốt)</option>
-                                <option value="Loại 2" ${cfg.theLucRadio === 'Loại 2' ? 'selected' : ''}>Loại 2 (Khá)</option>
-                                <option value="Loại 3" ${cfg.theLucRadio === 'Loại 3' ? 'selected' : ''}>Loại 3 (Trung bình)</option>
-                                <option value="Loại 4" ${cfg.theLucRadio === 'Loại 4' ? 'selected' : ''}>Loại 4 (Yếu)</option>
+                                <option value="Loại 1" ${isLoai1(cfg.theLucRadio) ? 'selected' : ''}>Loại 1 (Tốt)</option>
+                                <option value="Loại 2" ${isLoai2(cfg.theLucRadio) ? 'selected' : ''}>Loại 2 (Khá)</option>
+                                <option value="Loại 3" ${isLoai3(cfg.theLucRadio) ? 'selected' : ''}>Loại 3 (Trung bình)</option>
+                                <option value="Loại 4" ${isLoai4(cfg.theLucRadio) ? 'selected' : ''}>Loại 4 (Yếu)</option>
                             </select>
                         </div>
                     </div>
@@ -1405,10 +1429,10 @@
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                             <b style="font-size: 13px; color: #262626;">3. Bác sĩ 7 Chuyên khoa:</b>
                             <select id="cfg-pl-ck" style="height: 26px; font-size: 11.5px; border-radius: 4px; border: 1px solid #d9d9d9;">
-                                <option value="Loại I: Rất khỏe" ${cfg.plChuyenKhoa.includes('Loại I:') ? 'selected' : ''}>Loại I: Rất khỏe</option>
-                                <option value="Loại II: Khỏe" ${cfg.plChuyenKhoa.includes('Loại II') ? 'selected' : ''}>Loại II: Khỏe</option>
-                                <option value="Loại III: Trung bình" ${cfg.plChuyenKhoa.includes('Loại III') ? 'selected' : ''}>Loại III: Trung bình</option>
-                                <option value="Loại IV: Yếu" ${cfg.plChuyenKhoa.includes('Loại IV') ? 'selected' : ''}>Loại IV: Yếu</option>
+                                <option value="Loại I: Rất khỏe" ${isLoai1(cfg.plChuyenKhoa) ? 'selected' : ''}>Loại I: Rất khỏe</option>
+                                <option value="Loại II: Khỏe" ${isLoai2(cfg.plChuyenKhoa) ? 'selected' : ''}>Loại II: Khỏe</option>
+                                <option value="Loại III: Trung bình" ${isLoai3(cfg.plChuyenKhoa) ? 'selected' : ''}>Loại III: Trung bình</option>
+                                <option value="Loại IV: Yếu" ${isLoai4(cfg.plChuyenKhoa) ? 'selected' : ''}>Loại IV: Yếu</option>
                             </select>
                         </div>
 
@@ -1463,10 +1487,10 @@
                             <div>
                                 <label style="font-size: 11px; color: #595959; display: block;">Phân loại KSK:</label>
                                 <select id="cfg-pl-ketluan" style="width: 100%; height: 30px; font-size: 11.5px; border-radius: 4px; border: 1px solid #d9d9d9; font-weight: 600;">
-                                    <option value="Loại I: Rất khỏe" ${cfg.plKetLuan.includes('Loại I:') ? 'selected' : ''}>Loại I: Rất khỏe</option>
-                                    <option value="Loại II: Khỏe" ${cfg.plKetLuan.includes('Loại II') ? 'selected' : ''}>Loại II: Khỏe</option>
-                                    <option value="Loại III: Trung bình" ${cfg.plKetLuan.includes('Loại III') ? 'selected' : ''}>Loại III: Trung bình</option>
-                                    <option value="Loại IV: Yếu" ${cfg.plKetLuan.includes('Loại IV') ? 'selected' : ''}>Loại IV: Yếu</option>
+                                    <option value="Loại I: Rất khỏe" ${isLoai1(cfg.plKetLuan) ? 'selected' : ''}>Loại I: Rất khỏe</option>
+                                    <option value="Loại II: Khỏe" ${isLoai2(cfg.plKetLuan) ? 'selected' : ''}>Loại II: Khỏe</option>
+                                    <option value="Loại III: Trung bình" ${isLoai3(cfg.plKetLuan) ? 'selected' : ''}>Loại III: Trung bình</option>
+                                    <option value="Loại IV: Yếu" ${isLoai4(cfg.plKetLuan) ? 'selected' : ''}>Loại IV: Yếu</option>
                                 </select>
                             </div>
                             <div>
