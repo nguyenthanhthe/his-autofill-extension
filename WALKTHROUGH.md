@@ -218,3 +218,35 @@ Phiên bản **v1.2.1** giải quyết bài toán trải nghiệm hiển thị v
 3. **⚡ Thu Nhỏ Tối Đa Không Gian Làm Việc**:
    - Khi bấm `➖ Thu nhỏ`, tiện ích ẩn đồng thời cả thanh Tab (`#his-panel-tabs`) lẫn phần thân (`#his-panel-body`), chỉ giữ lại thanh tiêu đề mỏng giúp giải phóng toàn bộ không gian làm việc của HIS cho bác sĩ.
    - Bấm `➕ Mở rộng` sẽ bung lại toàn bộ giao diện làm việc nguyên trạng.
+
+---
+
+## 12. Điểm Mới Trong Phiên Bản v1.3.0
+
+Phiên bản **v1.3.0** thực hiện nâng cấp toàn diện mục **Cài Đặt** và quy trình điền khám lâm sàng theo nguyên tắc cốt lõi: **"Không điền gì tức là tiện ích không điền"** — trao toàn quyền tự chủ cho cán bộ y tế, loại bỏ hoàn toàn các giá trị ép buộc (hardcode):
+
+1. **🚫 Nguyên Tắc "Không Điền Gì = Tiện Ích Không Điền" (Zero Forced Fallback)**:
+   - Tất cả các trường cấu hình (Chỉ số thể lực, Thị lực có kính, Khám mắt khác, Thính lực TMH, Bệnh TMH, Hàm trên/dưới RHM, Bệnh RHM, 8 cơ quan Nội khoa, Ngoại khoa, Da liễu, Sản phụ khoa, Bác sĩ kết luận, Giờ kết thúc...): **Nếu để trống, tiện ích sẽ bỏ qua và không tác động/không ghi đè lên dữ liệu đã có trên HIS**.
+   - Loại bỏ triệt để các fallback mặc định cũ (như tự gán `5m`, `0.5m` hay tự điền chuỗi mặc định khi xóa trống).
+
+2. **👁️ Bổ Sung Đầy Đủ Thị Lực Có Kính & Bệnh Về Mắt**:
+   - Thêm ô cấu hình riêng biệt cho **Có kính Mắt Phải** (`cfg-co-kinh-p`) và **Có kính Mắt Trái** (`cfg-co-kinh-t`). Mặc định để trống (tiện ích không điền nếu người khám không đeo kính).
+   - Ô nội dung khám bệnh về mắt (`cfg-txt-matkhac`) được đưa trực tiếp vào nhóm chuyên khoa Mắt.
+
+3. **👂 Nâng Cấp Chuyên Khoa Tai - Mũi - Họng Chuẩn DOM Viettel HIS**:
+   - Sửa lỗi lệch thứ tự cột DOM Viettel HIS: Tiện ích ánh xạ chuẩn xác Cột 1 & 2 là **Tai Trái** (Nói thường / Nói thầm), Cột 3 & 4 là **Tai Phải** (Nói thường / Nói thầm).
+   - Tích hợp ô nội dung các bệnh Tai - Mũi - Họng (`cfg-txt-tmhkhac`), mã Bác sĩ TMH và nút Bỏ qua khám TMH trong cùng một accordion gọn gàng.
+
+4. **🦷 Chuyên Khoa Răng - Hàm - Mặt Tùy Chỉnh Độc Lập**:
+   - Tách bạch 3 nội dung khám: **Khám hàm trên** (`cfg-txt-rhmhamtren`), **Khám hàm dưới** (`cfg-txt-rhmhamduoi`) và **Các bệnh RHM nếu có** (`cfg-txt-rhmkhac`).
+   - Hỗ trợ để trống từng phần nếu không có bệnh lý hoặc để giữ nguyên ghi nhận của phòng khám.
+
+5. **🩺 Tái Cấu Trúc Cài Đặt Theo 7 Nhóm Chuyên Khoa Khám Lâm Sàng**:
+   - Bố cục Cài Đặt được chia thành 7 accordion (`<details>`) chuyên biệt:
+     - 📏 **1. Thể lực & Sinh hiệu**: Chiều cao, Cân nặng, Mạch, Huyết áp, Phân loại thể lực.
+     - 👁️ **2. Chuyên khoa Mắt**: Không kính (P/T), Có kính (P/T), Bệnh mắt, Bác sĩ Mắt, Bỏ qua.
+     - 👂 **3. Chuyên khoa Tai - Mũi - Họng**: Tai Trái (Thường/Thầm), Tai Phải (Thường/Thầm), Bệnh TMH, Bác sĩ TMH, Bỏ qua.
+     - 🦷 **4. Chuyên khoa Răng - Hàm - Mặt**: Hàm trên, Hàm dưới, Bệnh RHM, Bác sĩ RHM, Bỏ qua.
+     - 🩺 **5. Chuyên khoa Nội khoa**: Bác sĩ Nội, Bỏ qua, 8 cơ quan (Tuần hoàn, Hô hấp, Tiêu hóa, Thận - Tiết niệu, Nội tiết, Cơ - Xương - Khớp, Thần kinh, Tâm thần).
+     - 🩹 **6. Ngoại khoa, Da liễu & Sản phụ khoa**: Từng khoa có đầy đủ Mã BS, Bỏ qua và Ô nội dung khám chi tiết.
+     - 📋 **7. Kết luận, Phân loại KSK & Hệ thống**: Phân loại CK, Phân loại KSK, Mã bệnh KL Z10, BS Kết luận, Giờ KT, Lưu F11, Che PII, Nút Khôi phục chuẩn.
