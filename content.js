@@ -903,13 +903,21 @@
             }
         }
 
-        // Xác nhận kết thúc khám (an toàn, không click bừa checkbox ngoài ý muốn)
-        const cbKetThuc = cbsKL.find(c => {
-            const t = (c.innerText + ' ' + (c.closest('div')?.innerText || '')).toLowerCase();
-            return t.includes('kết thúc khám') || t.includes('kết thúc');
-        });
-        if (cbKetThuc && !cbKetThuc.classList.contains('ant-checkbox-wrapper-checked')) {
-            cbKetThuc.click();
+        // Xác nhận kết thúc khám
+        let cbKetThuc = paneKL.querySelector('div[id*="ket_thuc_kham" i] .ant-checkbox-wrapper, div[id*="ket_thuc_kham" i] input[type="checkbox"]');
+        if (!cbKetThuc) {
+            const labelSpan = Array.from(paneKL.querySelectorAll('span, label, nz-form-label'))
+                .find(el => el.innerText && el.innerText.trim().toLowerCase().includes('kết thúc khám'));
+            if (labelSpan) {
+                const section = labelSpan.closest('section, nz-form-item, .ant-form-item, div.row, div');
+                if (section) cbKetThuc = section.querySelector('.ant-checkbox-wrapper, input[type="checkbox"]');
+            }
+        }
+        if (cbKetThuc) {
+            const isChecked = cbKetThuc.classList.contains('ant-checkbox-wrapper-checked') || !!cbKetThuc.querySelector('.ant-checkbox-checked') || cbKetThuc.checked;
+            if (!isChecked) {
+                cbKetThuc.click();
+            }
         }
 
         // Bác sĩ kết luận
