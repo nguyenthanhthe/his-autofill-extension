@@ -442,7 +442,7 @@
             const match = text.match(/(\d{9,18})\s*-\s*([^\n\r\-]+)-\s*(\d{4})/);
             const nameInp = paneTD.querySelector('input[name="tenDayDu"]');
             const currentName = match ? match[2].trim() : (nameInp?.value?.trim() || '');
-            const currentCccd = match ? match[1].trim() : (paneTD.querySelector('input[name="soCmt"]')?.value?.trim() || '');
+            const currentCccd = match ? match[1].trim() : (paneTD.querySelector('input[name="cmnd"], input[name="soCmt"], input[placeholder*="CCCD" i]')?.value?.trim() || '');
 
             if (!currentName && !currentCccd) {
                 resetCachedPatient();
@@ -654,13 +654,21 @@
         await clickMainTab('Tiếp đón khám sức khoẻ');
         await delay(350);
 
-        const nameInput = document.querySelector('input[name="tenDayDu"]');
-        const pane = nameInput ? nameInput.closest('.ant-tabs-tabpane') : (document.querySelector('.tab-app-main > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane-active') || document);
+        const pane = document.querySelector('.tab-app-main > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane-active') || document;
+        const nameInput = pane.querySelector('input[name="tenDayDu"]') || document.querySelector('input[name="tenDayDu"]');
+        const cccdInput = pane.querySelector('input[name="cmnd"], input[name="soCmt"]') || document.querySelector('input[name="cmnd"], input[name="soCmt"]');
 
         // Chặn sớm: Nếu chưa có thông tin người khám
         const patientName = nameInput?.value?.trim() || cachedPatient.name?.trim();
-        if (!patientName) {
-            throw new Error('Chưa có thông tin người khám! Vui lòng gõ Tên hoặc CCCD vào ô Tìm kiếm trước.');
+        const patientCccd = cccdInput?.value?.trim() || cachedPatient.cccd?.trim();
+        if (!patientName && !patientCccd) {
+            const searchBox = pane.querySelector('input.bns-sub-input-search-tbl-overlay, input[placeholder*="Mã bệnh nhân"]') ||
+                              document.querySelector('input.bns-sub-input-search-tbl-overlay, input[placeholder*="Mã bệnh nhân"]');
+            if (searchBox) {
+                searchBox.focus();
+                searchBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            throw new Error('Chưa có thông tin người khám! Hãy gõ số CCCD hoặc Tên vào ô Tìm kiếm phía trên rồi chọn người bệnh.');
         }
 
         const timeInputs = Array.from(pane.querySelectorAll('input[placeholder="__:__"]'));
@@ -1233,8 +1241,8 @@
         try {
             await actionFn(statusEl);
         } catch (e) {
-            console.error('Lỗi tự động hóa:', e);
-            if (statusEl) statusEl.innerText = '❌ ' + e.message;
+            console.warn('HIS AutoFill:', e.message || e);
+            if (statusEl) statusEl.innerText = '⚠️ ' + e.message;
         } finally {
             isRunning = false;
             if (btnEl) {
