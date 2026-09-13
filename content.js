@@ -113,6 +113,7 @@
         docKetLuan: '02',
         gioKetThuc: '07:45',
         autoSave: true,
+        maskPii: true,
 
         examTexts: Object.assign({}, defaultExamTexts)
     };
@@ -590,11 +591,36 @@
         return '';
     }
 
+    function maskPatientPii(str, type) {
+        if (!str) return '';
+        if (type === 'cccd') {
+            if (str.length <= 6) return str;
+            return str.substring(0, 6) + '******' + (str.length > 10 ? str.substring(str.length - 2) : '');
+        }
+        if (type === 'name') {
+            const words = str.trim().split(/\s+/);
+            if (words.length <= 1) return str[0] + '***';
+            return words.map((w, idx) => {
+                if (idx === 0) return w;
+                if (w.length <= 2) return w[0] + '*';
+                return w[0] + '*'.repeat(Math.max(1, w.length - 2)) + w[w.length - 1];
+            }).join(' ');
+        }
+        return str;
+    }
+
     function getSelectedPatientBanner() {
         scanPatientInfo();
+        const cfg = loadConfig();
+        const shouldMask = cfg.maskPii !== false;
+
         const parts = [];
-        if (cachedPatient.cccd) parts.push(cachedPatient.cccd);
-        if (cachedPatient.name) parts.push(cachedPatient.name);
+        if (cachedPatient.cccd) {
+            parts.push(shouldMask ? maskPatientPii(cachedPatient.cccd, 'cccd') : cachedPatient.cccd);
+        }
+        if (cachedPatient.name) {
+            parts.push(shouldMask ? maskPatientPii(cachedPatient.name, 'name') : cachedPatient.name);
+        }
         if (cachedPatient.birthYear) parts.push(cachedPatient.birthYear);
         if (parts.length > 0) {
             let res = parts.join(' - ');
@@ -609,8 +635,12 @@
 
         const activePane = document.querySelector('.tab-app-main > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane-active');
         if (activePane) {
-            const match = activePane.innerText.match(/(\d{9,18}\s*-\s*[^\n\r\-]+-\s*\d{4})/);
-            if (match) return match[1].trim();
+            const match = activePane.innerText.match(/(\d{9,18})\s*-\s*([^\n\r\-]+)-\s*(\d{4})/);
+            if (match) {
+                const cccd = shouldMask ? maskPatientPii(match[1].trim(), 'cccd') : match[1].trim();
+                const name = shouldMask ? maskPatientPii(match[2].trim(), 'name') : match[2].trim();
+                return `${cccd} - ${name} - ${match[3].trim()}`;
+            }
         }
         return '';
     }
@@ -1165,6 +1195,7 @@
             docKetLuan: document.getElementById('cfg-doc-ketluan')?.value?.trim() || '',
             gioKetThuc: document.getElementById('cfg-gio-kt')?.value?.trim() || '07:45',
             autoSave: document.getElementById('cfg-auto-save')?.checked ?? true,
+            maskPii: document.getElementById('cfg-mask-pii')?.checked ?? true,
 
             examTexts: {
                 tuanHoan: document.getElementById('cfg-txt-tuanhoan')?.value?.trim() || defaultExamTexts.tuanHoan,
@@ -1446,6 +1477,17 @@
                 <!-- ============================================== -->
                 <div id="section-caidat" style="display: none;">
                     
+                    <!-- BẢO VỆ DỮ LIỆU CÁ NHÂN (PII) -->
+                    <div style="margin-bottom: 12px; background: #fffbe6; border: 1px solid #ffe58f; border-radius: 6px; padding: 8px 10px;">
+                        <label style="font-size: 12px; font-weight: 600; color: #d46b08; display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                            <input id="cfg-mask-pii" type="checkbox" ${cfg.maskPii !== false ? 'checked' : ''}>
+                            🔒 Che thông tin người khám (Bảo vệ PII)
+                        </label>
+                        <div style="font-size: 11px; color: #8c8c8c; margin-top: 3px; padding-left: 20px;">
+                            Tự động ẩn bớt số CCCD và Họ tên trên bảng điều khiển để bảo vệ đời tư.
+                        </div>
+                    </div>
+
                     <!-- THỂ LỰC & CHỈ SỐ -->
                     <div style="margin-bottom: 12px; border-bottom: 1px solid #f0f0f0; padding-bottom: 10px;">
                         <b style="font-size: 13px; color: #262626;">1. Chỉ số thể lực & Sinh hiệu:</b>
@@ -1679,6 +1721,7 @@
             inp.addEventListener('change', () => {
                 const updated = readConfigFromUI();
                 saveConfig(updated);
+                updatePatientBannerDisplay();
             });
         });
 
