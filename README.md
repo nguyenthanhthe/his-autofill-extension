@@ -79,7 +79,7 @@ Cán bộ y tế chỉ cần bấm vào liên kết dưới đây và nhấn nú
 
 ## ⚖️ GIẤY PHÉP (LICENSE)
 
-Dự án được phát hành theo giấy phép mã nguồn mở [MIT License](LICENSE). Bản quyền thuộc về **Nguyễn Thành Thế** (2026).
+Dự án được phát hành theo giấy phép mã nguồn mở [MIT License](LICENSE). Bản quyền thuộc về **Nguyễn Thanh Thế** (2026).
 
 ---
 
